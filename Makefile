@@ -73,5 +73,5 @@ register:
 	python3 scripts/register.py
 
 format:
-	find . \( -name "*.h" -o -iname "*.cc" \) | xargs clang-format -i -style=file
+	find . \( -name "*.h" -o -iname "*.cc" \) | xargs clang-format-14 -i -style=file
 
