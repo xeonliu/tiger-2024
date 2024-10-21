@@ -119,6 +119,8 @@
 \= {adjust(); return Parser::EQ;}
 \> {adjust(); return Parser::GT;}
 \< {adjust(); return Parser::LT;}
+\| {adjust(); return Parser::OR;}
+\& {adjust(); return Parser::AND;}
 
 
 
