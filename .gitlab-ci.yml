@@ -19,3 +19,10 @@ test_lab3:
   stage: test
   script:
     - make gradelab3
+test_lab4:
+  image: ipadsse302/tigerlabs_env:2.0.0
+  tags:
+    - r743
+  stage: test
+  script:
+    - make gradelab4
