@@ -51,7 +51,7 @@
 
 /* Non-termianl Symbols & Their semantic values Here*/
 %type <exp> exp expseq
-%type <explist> actuals nonemptyactuals sequencing sequencing_exps
+%type <explist> /* params */actuals nonemptyactuals /* for expseq */ sequencing sequencing_exps
 %type <var> lvalue one oneormore
 /*
 explicit DecList(Dec *dec)
@@ -71,6 +71,8 @@ TypeDec(int pos, NameAndTyList *types) : Dec(pos), types_(types)
 %type <field> tyfield
 %type <ty> ty
 %type <fundeclist> fundec
+/*FunDec(int pos, sym::Symbol *name, FieldList *params, sym::Symbol *result,
+         Exp *body)*/
 %type <fundec> fundec_one
 
 %start program
@@ -93,6 +95,13 @@ lvalue:  ID  {$$ = new absyn::SimpleVar(scanner_.GetTokPos(), $1);}
   | lvalue LBRACK exp RBRACK {
     $$ = new absyn::SubscriptVar(scanner_.GetTokPos(), $1, $3);
   }
+  |
+  // Test 24
+  // Shift-Reduce Confilict
+  ID LBRACK exp RBRACK
+  {
+    $$ = new absyn::SubscriptVar(scanner_.GetTokPos(), new absyn::SimpleVar(scanner_.GetTokPos(), $1), $3);
+  }
   ;
 
  /* TODO: Put your lab3 code here */
@@ -112,6 +121,10 @@ decs: decs_nonempty {
 decs_nonempty: decs_nonempty_s {
   $$ = new absyn::DecList($1);
 }
+| decs_nonempty_s decs_nonempty {
+  $$ = $2;
+  $$->Prepend($1);
+} 
 ;
 /* dec-> tydec 
       -> vardec
@@ -133,9 +146,17 @@ tydec {
 }
 ;
 
-// TODO: What's the rule for absyn::NameAndTyList *tydeclist ???
 tydec: tydec_one {
   $$ = new absyn::NameAndTyList($1);
+}
+|
+// Multiple Tydec on multiple lines.
+// Example: Test 14
+// type arrtype = array of int
+// type rectype = {name:string, id: int}
+tydec_one tydec {
+  $$ = $2;
+  $$->Prepend($1);
 }
 ;
 
@@ -171,7 +192,7 @@ tyfields_nonempty: tyfield {
   $$ = new absyn::FieldList($1);
 }
 |
-// TODO： Left Recurse OR Right Recurse?
+// Right Recurse, prepend
 tyfield COMMA tyfields_nonempty {
   $$ = $3;
   $$ -> Prepend($1);
@@ -195,18 +216,42 @@ VAR ID COLON ID ASSIGN exp {
 ;
 
 // A.2.2 Function
+fundec_one: FUNCTION ID LPAREN tyfields RPAREN EQ exp {
+    $$ = new absyn::FunDec(scanner_.GetTokPos(), $2, $4, nullptr, $7);
+}
+|
+FUNCTION ID LPAREN tyfields RPAREN COLON ID EQ exp {
+  $$ = new absyn::FunDec(scanner_.GetTokPos(), $2, $4, $7, $9);
+}
+;
 
+/* class FunDecList */
+// Why do I need it?? Beacuse there can be multiple Dec in multiple lines.
+fundec: fundec_one {
+  $$ = new absyn::FunDecList($1);
+}
+// Test 19
+|
+fundec_one fundec {
+  $$ = $2;
+  $$->Prepend($1);
+}
+;
 
 // A.3.2 Expressions
 // Type: Exp
 exp: lvalue {
-  $$ = new absyn::VarExp(scanner_.GetTokPos(), $1);}
+  $$ = new absyn::VarExp(scanner_.GetTokPos(), $1);
 }
 |
 NIL {
   $$ = new absyn::NilExp(scanner_.GetTokPos());
 }
 |
+/* LPAREN RPAREN {
+  $$ = new absyn::VoidExp(scanner_.GetTokPos());
+}
+| */
 INT {
   $$ = new absyn::IntExp(scanner_.GetTokPos(), $1);
 }
@@ -224,53 +269,53 @@ ID LPAREN actuals /* Arguments */ RPAREN {
 // OpExp
 // Arithmetic
 exp PLUS exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::PULS_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::PLUS_OP, $1, $3);
 }
 |
 exp MINUS exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::MINUS_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::MINUS_OP, $1, $3);
 }
 |
 exp TIMES exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::TIMES_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::TIMES_OP, $1, $3);
 }
 |
 exp DIVIDE exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::DIVIDE_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::DIVIDE_OP, $1, $3);
 }
 |
 // Comparison / String Comparisons
 exp EQ exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::EQ_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::EQ_OP, $1, $3);
 }
 |
 exp NEQ exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::NEQ_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::NEQ_OP, $1, $3);
 }
 |
 exp LT exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::LT_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::LT_OP, $1, $3);
 }
 |
 exp LE exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::LE_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::LE_OP, $1, $3);
 }
 |
 exp GT exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::GT_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::GT_OP, $1, $3);
 }
 |
 exp GE exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::GE_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::GE_OP, $1, $3);
 }
 |
 // Boolean Operators
 exp AND exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::AND_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::AND_OP, $1, $3);
 }
 |
 exp OR exp {
-  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::OR_OP);
+  $$ = new absyn::OpExp(scanner_.GetTokPos(), absyn::Oper::OR_OP, $1, $3);
 }
 |
 // Record Creation
@@ -302,7 +347,7 @@ WHILE exp DO exp {
 }
 |
 FOR ID ASSIGN exp TO exp DO exp {
-  $$ = new absyn::ForExp(scanner_.GetTokPos(), $2, $4);
+  $$ = new absyn::ForExp(scanner_.GetTokPos(), $2, $4, $6, $8);
 }
 |
 BREAK {
@@ -316,8 +361,45 @@ LET decs IN expseq END {
 LPAREN exp RPAREN {
   $$ = $2;
 }
+|
+LPAREN expseq RPAREN {
+  $$ = $2;
+}
 ;
 
+// exp -> (expr-seq_opt)
+// for i:=0 to 100 do (a:=a+1;()) Test 12
+// P365
+// expseq是0个或多个用分号分隔的表达式所形成的序列
+// 只有一个时不应被识别！至少有两个才有意义。一个就是VoidExp
+expseq: sequencing_exps {
+  $$ = new absyn::SeqExp(scanner_.GetTokPos(), $1);
+}
+|
+/* empty */
+{
+  // TODO??
+  $$ = new absyn::VoidExp(scanner_.GetTokPos());
+}
+;
+
+// non-empty seq
+// d[3]
+sequencing_exps: sequencing {
+  $$ = $1;
+}
+|
+exp SEMICOLON sequencing_exps {
+  $$ = $3;
+  $$->Prepend($1);
+}
+;
+
+// seq_one
+sequencing: exp {
+  $$ = new absyn::ExpList($1);
+}
+;
 
 /* EFiled for Record Expression */
 // type-id {id = exp{,id=exp}} or type-id{}
