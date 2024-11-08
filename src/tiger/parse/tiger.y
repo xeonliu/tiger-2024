@@ -34,14 +34,20 @@
 %token
   COMMA COLON SEMICOLON LPAREN RPAREN LBRACK RBRACK
   LBRACE RBRACE DOT
-  PLUS MINUS TIMES DIVIDE EQ NEQ LT LE GT GE
-  AND OR ASSIGN
+  /* PLUS MINUS TIMES DIVIDE EQ NEQ LT LE GT GE */
+  /* AND OR */ ASSIGN 
   ARRAY IF THEN ELSE WHILE FOR TO DO LET IN END OF
   BREAK NIL
   FUNCTION VAR TYPE
 
  /* token priority */
  /* TODO: Put your lab3 code here */
+%left OR
+%left AND
+%nonassoc EQ NEQ LT LE GT GE
+%left PLUS MINUS
+%left TIMES DIVIDE
+%right UMINUS
 /* 4.5.32
   %type: associating semantic values with (non)terminals 
   With this directive, symbol-list defines of one or more blank or comma delimited grammatical symbols (i.e., terminal and/or nonterminal symbols); type is either a polymorphic type-identifier or a field name defined in the %union specification. The specified nonterminal(s) are automatically associated with the indicate semantic type. The pointed arrows are part of the type specification.
@@ -365,13 +371,19 @@ LPAREN exp RPAREN {
 LPAREN expseq RPAREN {
   $$ = $2;
 }
+| 
+// merge.out -i
+MINUS exp %prec UMINUS {
+    $$ = new absyn::OpExp{scanner_.GetTokPos(), absyn::Oper::MINUS_OP,
+          new absyn::IntExp{scanner_.GetTokPos(), 0}, $2};
+}
 ;
 
 // exp -> (expr-seq_opt)
 // for i:=0 to 100 do (a:=a+1;()) Test 12
 // P365
 // expseq是0个或多个用分号分隔的表达式所形成的序列
-// 只有一个时不应被识别！至少有两个才有意义。一个就是VoidExp
+// 只有一个时不应被识别！至少有两个才有意义。没有就是VoidExp
 expseq: sequencing_exps {
   $$ = new absyn::SeqExp(scanner_.GetTokPos(), $1);
 }
