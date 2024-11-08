@@ -278,6 +278,44 @@ exp OR exp {
 ID LBRACE rec RBRACE {
   $$ = new absyn::RecordExp(scanner_.GetTokPos(), $1, $3);
 }
+|
+// Array Creation
+ID LBRACK exp RBRACK OF exp {
+  $$  = new absyn::ArrayExp(scanner_.GetTokPos(), $1, $3, $6);
+}
+|
+// Assignment
+lvalue ASSIGN exp {
+  $$ = new absyn::AssignExp(scanner_.GetTokPos(), $1, $3);
+}
+| 
+IF exp THEN exp ELSE exp {
+  $$ = new absyn::IfExp(scanner_.GetTokPos(), $2, $4, $6);
+}
+|
+IF exp THEN exp {
+  $$ = new absyn::IfExp(scanner_.GetTokPos(), $2, $4, nullptr);
+}
+|
+WHILE exp DO exp {
+  $$ = new absyn::WhileExp(scanner_.GetTokPos(), $2, $4);
+}
+|
+FOR ID ASSIGN exp TO exp DO exp {
+  $$ = new absyn::ForExp(scanner_.GetTokPos(), $2, $4);
+}
+|
+BREAK {
+  $$ = new absyn::BreakExp(scanner_.GetTokPos());
+}
+|
+LET decs IN expseq END {
+  $$ = new absyn::LetExp(scanner_.GetTokPos(), $2, $4);
+}
+|
+LPAREN exp RPAREN {
+  $$ = $2;
+}
 ;
 
 
