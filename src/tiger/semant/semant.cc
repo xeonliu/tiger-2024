@@ -1,136 +1,441 @@
 #include "tiger/semant/semant.h"
 #include "tiger/absyn/absyn.h"
+#include "tiger/env/env.h"
+#include "tiger/semant/types.h"
+#include <cstddef>
 
 namespace absyn {
 
 void AbsynTree::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                            err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // Call Different Analyser
+  // Report Error using: errormsg->Error(int pos, std::string_view message, ...)
+  // TODO: What Does Label Count mean?
+  this->root_->SemAnalyze(venv, tenv, 0, errormsg);
 }
 
 type::Ty *SimpleVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab4 code here */
+  // Determine Type of var and return it.
+  // Singeleton
+  // Have Access to this->sym_
+
+  // 1. Identifier is in the environment
+  // 2. It binds to a VarEntry (not FunEntry)
+
+  env::VarEntry* var_entry = dynamic_cast<env::VarEntry*>(
+    venv->Look(this->sym_)
+  );
+
+  if (var_entry == nullptr) {
+    
+    // Is std::string in C++ \0 terminated?
+    // Nope. c_str() method returns a zero-terminated C String.
+    errormsg->Error(this->pos_, "undefined variable %s", this->sym_->Name().c_str());
+    
+    // TODO: What should I return?
+    return nullptr;
+  }
+  
+  // 3. Sometimes VarEntry may have type::NameTy type.
+  // However we should return an "Actual Type", which traces up to their final definition.
+  return var_entry->ty_->ActualTy();
 }
 
 type::Ty *FieldVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // How to get the type of var.sym?
+
+  // The type of var should be RecordTy?
+  // TODO: Use `Ty::IsSameType()`?
+  type::RecordTy* record_ty = dynamic_cast<type::RecordTy*>(
+    this->var_->SemAnalyze(venv, tenv, labelcount, errormsg)
+  );
+
+  if(record_ty==nullptr) {
+    errormsg->Error(this->pos_, "Not a Record");
+  }
+
+  // Get the type of sim.
+  // Find the field in fieldlist
+  // absyn::FieldList -> type::FieldList -> std::list<type::Field *>
+  // Find the type of this->sim_ in field_list
+  std::list<type::Field *> field_list = 
+    record_ty->fields_->GetList();
+  
+  for (auto field : field_list) {
+    if(field->name_==this->sym_) {
+      return field->ty_;
+    }
+  }
+
+  errormsg->Error(this->pos_, "Field in Record not found");
+
+  return nullptr;
 }
 
 type::Ty *SubscriptVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    int labelcount,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::ArrayTy* array_ty = dynamic_cast<type::ArrayTy*>(
+    this->var_->SemAnalyze(venv, tenv, labelcount, errormsg)
+  );
+
+  if(array_ty == nullptr) {
+    errormsg->Error(this->pos_, "Not an array");
+  }
+
+  return array_ty->ActualTy();
 }
 
 type::Ty *VarExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return this->var_->SemAnalyze(venv, tenv, labelcount, errormsg);
 }
 
 type::Ty *NilExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::NilTy::Instance();
 }
 
 type::Ty *IntExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::IntTy::Instance();
 }
 
 type::Ty *StringExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::StringTy::Instance();
 }
 
 type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                               int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 1. Identifier is in the environment
+  env::FunEntry* fun_entry = dynamic_cast<env::FunEntry*>(
+   venv->Look(this->func_)
+  );
+
+  if(fun_entry == nullptr) {
+    errormsg->Error(this->pos_, "undefined function %s",this->func_->Name().c_str());
+    return nullptr;
+  }
+
+  return fun_entry->result_->ActualTy();  
 }
 
 type::Ty *OpExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                             int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  auto oper = this->oper_;
+  auto left = this->left_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  auto right = this->right_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  if(!left->IsSameType(type::IntTy::Instance())) {
+    errormsg->Error(this->pos_, "integer required");
+  }
+
+  if(!left->IsSameType(type::IntTy::Instance())) {
+    errormsg->Error(this->pos_, "integer required");
+  }
+
+  return type::IntTy::Instance();
 }
 
 type::Ty *RecordExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // Get the type of this->typ_(Symbol)
+  // 1. Get the Record Type
+  auto record_type = dynamic_cast<type::RecordTy*>(tenv->Look(this->typ_));
+
+  if(record_type == nullptr) {
+    errormsg->Error(this->pos_, "not defined");
+  }
+
+  // 2. Verify name & type
+  const auto exp_fields = this->fields_->GetList();
+  const auto type_fields = record_type->fields_->GetList();
+
+  if(exp_fields.size()!=type_fields.size()) {
+    errormsg->Error(this->pos_, "Field number mismatch");
+  }
+
+  auto exp_it = exp_fields.begin();
+  auto type_it = type_fields.begin();
+
+  while (exp_it != exp_fields.end() && type_it != type_fields.end()) {
+    auto exp_field = *exp_it;
+    auto type_field = *type_it;
+
+    if (exp_field->name_ != type_field->name_) {
+      errormsg->Error(this->pos_, "field name mismatch");
+    }
+
+    auto exp_field_type = exp_field->exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    if (!exp_field_type->IsSameType(type_field->ty_)) {
+      errormsg->Error(this->pos_, "field type mismatch");
+    }
+
+    ++exp_it;
+    ++type_it;
+  }
+
+  return tenv->Look(this->typ_)->ActualTy();
 }
 
 type::Ty *SeqExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // Doing semantic analysis on sub exps?
+  type::Ty* ty = nullptr;
+  
+  for (auto exp: this->seq_->GetList()) {
+    ty = exp->SemAnalyze(venv, tenv, labelcount, errormsg);
+  }
+  
+  return ty->ActualTy();
 }
 
 type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+
+  type::Ty* var_type = this->var_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty* exp_type = this->exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  if(!var_type->IsSameType(exp_type)) {
+    errormsg->Error(this->pos_, "type does not match");
+  }
+
+  // The assignment expression produces **no value**
+  return type::VoidTy::Instance();
 }
 
 type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                             int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  this->test_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  
+  auto exp2_type = this->then_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  if(this->elsee_) {
+    auto exp3_type = this->elsee_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    if(!exp2_type->IsSameType(exp3_type)) {
+      errormsg->Error(this->pos_, "Type mismatch");
+    }
+    return exp2_type;
+  } else {
+    if(exp2_type!=type::VoidTy::Instance()) {
+      errormsg->Error(this->pos_, "Expression 2 cannot have type");
+    }
+    return type::VoidTy::Instance();
+  }
 }
 
 type::Ty *WhileExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  this->test_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  
+  if(!this->body_->SemAnalyze(venv, tenv, labelcount, errormsg)->IsSameType(type::VoidTy::Instance())) {
+    errormsg->Error(this->pos_, "while body must produce no value");
+  }
+
+  return type::VoidTy::Instance();
 }
 
 type::Ty *ForExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // Contains declaration!
+
+
+  // exp1 to exp2
+  auto exp1_type = this->lo_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  auto exp2_type = this->hi_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  if(!exp1_type->IsSameType(exp2_type)) {
+    errormsg->Error(this->pos_, "exp1 & exp2 doesn't have the same type");
+  }
+
+  // id := 
+  venv->BeginScope();
+  // Scope within exp3, cannot assign in exp3.
+  venv->Enter(this->var_, new env::VarEntry(exp1_type, true));
+
+  // exp3 must produce no value
+  if(!this->body_->SemAnalyze(venv, tenv, labelcount, errormsg)->IsSameType(type::VoidTy::Instance())) {
+    errormsg->Error(this->pos_, "Exp3 Must Produce no value");
+  }
+  venv->EndScope();
+
+  return type::VoidTy::Instance();
 }
 
 type::Ty *BreakExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::VoidTy::Instance();
 }
 
 type::Ty *LetExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 1. Evaluates the declarations
+  // DecList
+  auto decs = this->decs_->GetList();
+  // BeginScope?
+  venv->BeginScope();
+  for (auto dec: decs) {
+    dec->SemAnalyze(venv, tenv, labelcount, errormsg);
+  }
+  // 2. Evaluate the declarations, binding types, variables, and functions to the scope of the expression sequence
+  // Should be absyn::SeqExp?
+  auto type = this->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  venv->EndScope();
+
+  return type;
 }
 
 type::Ty *ArrayExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // The expression type-id [expr] of expr creates a new arrtay of type type-id
+  // whose size is given by the expression in brackets.
+  // Initially, the array is filled with elements whose values are given by the expression after the `of`
+
+  // Example:
+  // type intArray = array of int
+  // var row := intArray [N] of 0
+
+  // 1. evaluate type
+  type::ArrayTy* array_ty = dynamic_cast<type::ArrayTy*>(tenv->Look(this->typ_));
+
+  auto element_ty = array_ty->ty_;
+
+  // 2. Evaluate expression in the brackets
+  auto size_type = this->size_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  // Check Size type
+  if(!size_type->IsSameType(type::IntTy::Instance())) {
+    errormsg -> Error(this->pos_, "size must be int");
+  }
+
+  auto init_type = this->init_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  // Check init type
+  if(!init_type->IsSameType(element_ty)) {
+    errormsg->Error(this->pos_, "Init Type and Element Type doesn't match!");
+  }
+
+  return array_ty;
 }
 
 type::Ty *VoidExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                               int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::VoidTy::Instance();
 }
 
 void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // There can be a list of function declarations.
+  for (auto fundec: this->functions_->GetList()) {
+    // Fundec: name, params, result
+
+    // 1. Result Type
+    type::Ty* result_ty = tenv->Look(fundec->result_);
+
+    // //   Field(int pos, sym::Symbol *name, sym::Symbol *typ)
+    // //  : pos_(pos), name_(name), typ_(typ), escape_(true) {} 
+    // auto fields = fundec->params_->MakeFieldList(tenv, errormsg);
+
+    // Convert Fields to Param Types.
+    // 2. Param Type
+    type::TyList* formal_tys = fundec->params_->MakeFormalTyList(tenv, errormsg);// Generate Formal TyList. 
+    
+    // Bind Funcdef in outer
+    // Bind name with result type and param types.
+    venv->Enter(fundec->name_, new env::FunEntry(formal_tys,result_ty));
+    
+    venv->BeginScope();
+    // Bind each param with its type
+    std::list<type::Field*> fields = fundec->params_->MakeFieldList(tenv, errormsg)->GetList();
+    for (auto field : fields) {
+      // TODO: Is it read-only?
+      venv->Enter(field->name_, new env::VarEntry(field->ty_));
+    }
+    // 3. Deal with Body
+    fundec->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    venv->EndScope();
+  }
 }
 
 void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
                         err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  auto exp_type = this->init_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  // If the type is not specified, the variable’s type comes from the expression.
+  if (this->typ_ == nullptr) {
+    venv->Enter(this->var_, new env::VarEntry(exp_type));
+  } else {
+    auto typ_type = tenv->Look(this->typ_);
+    if(!typ_type->IsSameType(exp_type)) {
+      errormsg->Error(this->pos_, "The type and exp type does not match in vardec");
+    }else{
+      venv->Enter(this->var_, new env::VarEntry(typ_type));
+    }
+  }
 }
 
 void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
                          err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // Multiple Tydec on multiple lines.
+  // Example: Test 14
+  // type arrtype = array of int
+  // type rectype = {name:string, id: int}
+
+  for (auto tydec: this->types_->GetList()){
+      // TODO： Send type_id into tenv with nullptr?
+      tenv->Enter(tydec->name_, nullptr);
+      /* tydec -> type type-id = ty */
+      auto type = tydec->ty_->SemAnalyze(tenv, errormsg);
+      // Bind Name With Type
+      tenv->Enter(tydec->name_, type);
+  }
+
 }
 
 type::Ty *NameTy::SemAnalyze(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // ty -> type-id
+  return tenv->Look(this->name_);
 }
 
 type::Ty *RecordTy::SemAnalyze(env::TEnvPtr tenv,
                                err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // ty -> { tyfields }
+  // What's the type of Field List??
+  return new type::RecordTy(this->record_->MakeFieldList(tenv, errormsg));
 }
 
 type::Ty *ArrayTy::SemAnalyze(env::TEnvPtr tenv,
                               err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // ty -> array of type-id
+  auto element_type = tenv->Look(this->array_);
+  return new type::ArrayTy(element_type);
 }
 
 } // namespace absyn

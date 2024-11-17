@@ -22,6 +22,9 @@ public:
       : EnvEntry(readonly), ty_(ty) {};
 };
 
+/**
+  FunEntry Contains type of formals & result
+ */
 class FunEntry : public EnvEntry {
 public:
   type::TyList *formals_;

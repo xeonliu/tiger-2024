@@ -43,6 +43,7 @@ private:
   static StringTy stringty_;
 };
 
+// No Value
 class VoidTy : public Ty {
 public:
   static VoidTy *Instance() { return &voidty_; }

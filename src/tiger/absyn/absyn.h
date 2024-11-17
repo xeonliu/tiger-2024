@@ -87,6 +87,7 @@ protected:
   explicit Var(int pos) : pos_(pos) {}
 };
 
+// ID only lvalue
 class SimpleVar : public Var {
 public:
   sym::Symbol *sym_;
@@ -98,6 +99,7 @@ public:
                        err::ErrorMsg *errormsg) const override;
 };
 
+// var.sym
 class FieldVar : public Var {
 public:
   Var *var_;
@@ -219,6 +221,9 @@ public:
                        err::ErrorMsg *errormsg) const override;
 };
 
+/**
+  type-id {id = exp{,id=exp}}
+ */
 class RecordExp : public Exp {
 public:
   sym::Symbol *typ_;

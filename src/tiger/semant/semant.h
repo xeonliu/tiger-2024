@@ -14,6 +14,9 @@ namespace sem {
 // lab4 only
 class ProgSem {
 public:
+  /**
+    Init using absyn_tree and errormsg from Parsing Stage.
+   */
   ProgSem(std::unique_ptr<absyn::AbsynTree> absyn_tree,
           std::unique_ptr<err::ErrorMsg> errormsg)
       : absyn_tree_(std::move(absyn_tree)), errormsg_(std::move(errormsg)),
