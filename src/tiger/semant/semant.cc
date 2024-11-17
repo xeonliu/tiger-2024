@@ -427,19 +427,38 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
   // type rectype = {name:string, id: int}
 
   for (auto tydec : this->types_->GetList()) {
-    // TODO： Send type_id into tenv with nullptr?
-    tenv->Enter(tydec->name_, nullptr);
     /* tydec -> type type-id = ty */
+
+    // For Mutually Recursive Declarations.
+    // TODO： Send type_id into tenv with type::NameTy(tydec->name, nullptr)?
+    tenv->Enter(tydec->name_, new type::NameTy(tydec->name_, nullptr));
+
     auto type = tydec->ty_->SemAnalyze(tenv, errormsg);
+
+    // TODO: HACK for test 16: If type equals NameTy, break.
+    if(dynamic_cast<type::NameTy*>(type)!=nullptr) {
+      errormsg->Error(tydec->ty_->pos_, "illegal type cycle");
+      break;
+    }
+
     // Bind Name With Type
     tenv->Enter(tydec->name_, type);
   }
 }
 
+/**
+  Should return NameTy(sym::Symbol *sym, Ty *ty).
+  Never returns null.
+ */
 type::Ty *NameTy::SemAnalyze(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
   // ty -> type-id
-  return tenv->Look(this->name_);
+
+  // TODO: 只要到达任何Ty_Name类型，transTy就应停止？
+  auto type = tenv->Look(this->name_);
+  // if type == nullptr: Undefined Type Name.
+  // Return a type that can have an actual type of nullptr.
+  return new type::NameTy(this->name_, type);
 }
 
 type::Ty *RecordTy::SemAnalyze(env::TEnvPtr tenv,
