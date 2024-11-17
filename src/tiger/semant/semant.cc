@@ -133,6 +133,11 @@ type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     return nullptr;
   }
 
+  // 2. Check whether arguments are defined
+  for (auto arg: this->args_->GetList()) {
+    arg->SemAnalyze(venv, tenv, labelcount, errormsg);
+  }
+
   return fun_entry->result_->ActualTy();
 }
 
@@ -384,7 +389,10 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     // Bind Funcdef in outer
     // Bind name with result type and param types.
     venv->Enter(fundec->name_, new env::FunEntry(formal_tys, result_ty));
+  }
 
+  // Stage 2: For Mutually Recursive defs.
+  for (auto fundec : this->functions_->GetList()) {
     venv->BeginScope();
     // Bind each param with its type
     std::list<type::Field *> fields =
