@@ -62,7 +62,7 @@ type::Ty *FieldVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
       this->var_->SemAnalyze(venv, tenv, labelcount, errormsg));
 
   if (record_ty == nullptr) {
-    errormsg->Error(this->pos_, "Not a Record");
+    errormsg->Error(this->pos_, "not a record type");
   }
 
   // Get the type of sim.
@@ -77,7 +77,8 @@ type::Ty *FieldVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     }
   }
 
-  errormsg->Error(this->pos_, "Field in Record not found");
+  errormsg->Error(this->pos_, "field %s doesn't exist",
+                  this->sym_->Name().c_str());
 
   return nullptr;
 }
@@ -90,7 +91,7 @@ type::Ty *SubscriptVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
       this->var_->SemAnalyze(venv, tenv, labelcount, errormsg));
 
   if (array_ty == nullptr) {
-    errormsg->Error(this->pos_, "Not an array");
+    errormsg->Error(this->pos_, "array type required");
   }
 
   return array_ty->ActualTy();
@@ -133,9 +134,25 @@ type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     return nullptr;
   }
 
-  // 2. Check whether arguments are defined
-  for (auto arg : this->args_->GetList()) {
-    arg->SemAnalyze(venv, tenv, labelcount, errormsg);
+  // 2. Check whether arguments are defined and whether their type matches
+  auto param_list = fun_entry->formals_->GetList();
+  auto arg_list = this->args_->GetList();
+
+  auto param_it = param_list.begin();
+  auto arg_it = arg_list.begin();
+
+  while (param_it != param_list.end() && arg_it != arg_list.end()) {
+    auto arg_type = (*arg_it)->SemAnalyze(venv, tenv, labelcount, errormsg);
+    if (!arg_type->IsSameType(*param_it)) {
+      errormsg->Error(this->pos_, "para type mismatch");
+    }
+    ++param_it;
+    ++arg_it;
+  }
+
+  if (arg_it != arg_list.end()) {
+    errormsg->Error(this->pos_, "too many params in function %s",
+                    this->func_->Name().c_str());
   }
 
   return fun_entry->result_->ActualTy();
@@ -186,7 +203,8 @@ type::Ty *RecordExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   auto record_type = dynamic_cast<type::RecordTy *>(tenv->Look(this->typ_));
 
   if (record_type == nullptr) {
-    errormsg->Error(this->pos_, "not defined");
+    errormsg->Error(this->pos_, "undefined type %s",
+                    this->typ_->Name().c_str());
   }
 
   // 2. Verify name & type
@@ -249,7 +267,7 @@ type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   type::Ty *exp_type = this->exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
 
   if (!var_type->IsSameType(exp_type)) {
-    errormsg->Error(this->pos_, "type does not match");
+    errormsg->Error(this->pos_, "unmatched assign exp");
   }
 
   // The assignment expression produces **no value**
@@ -377,7 +395,7 @@ type::Ty *ArrayExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   // Check init type
   if (!init_type->IsSameType(element_ty)) {
-    errormsg->Error(this->pos_, "Init Type and Element Type doesn't match!");
+    errormsg->Error(this->pos_, "type mismatch");
   }
 
   return array_ty;
@@ -393,13 +411,16 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
   // There can be a list of function declarations.
+
+  env::VEnvPtr declared_functions = new env::VEnv();
+
   for (auto fundec : this->functions_->GetList()) {
     // Fundec: name, params, result
 
     // 1. Result Type
     // NOTE: fundec->result_ can be nullptr.
-    type::Ty *result_ty =
-        fundec->result_ ? tenv->Look(fundec->result_) : type::VoidTy::Instance();
+    type::Ty *result_ty = fundec->result_ ? tenv->Look(fundec->result_)
+                                          : type::VoidTy::Instance();
 
     // //   Field(int pos, sym::Symbol *name, sym::Symbol *typ)
     // //  : pos_(pos), name_(name), typ_(typ), escape_(true) {}
@@ -412,7 +433,15 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 
     // Bind Funcdef in outer
     // Bind name with result type and param types.
-    venv->Enter(fundec->name_, new env::FunEntry(formal_tys, result_ty));
+    auto fun_entry = new env::FunEntry(formal_tys, result_ty);
+    venv->Enter(fundec->name_, fun_entry);
+
+    // There can't be two functions with same name! Test 39.
+    if(auto entry = declared_functions->Look(fundec->name_)) {
+      errormsg->Error(this->pos_, "two functions have the same name");
+    }
+
+    declared_functions->Enter(fundec->name_, fun_entry);
   }
 
   // Stage 2: For Mutually Recursive defs.
@@ -452,8 +481,7 @@ void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
   } else {
     auto typ_type = tenv->Look(this->typ_);
     if (!typ_type->IsSameType(exp_type)) {
-      errormsg->Error(this->pos_,
-                      "The type and exp type does not match in vardec");
+      errormsg->Error(this->pos_, "type mismatch");
     } else {
       venv->Enter(this->var_, new env::VarEntry(typ_type));
     }
@@ -468,6 +496,8 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
   // type arrtype = array of int
   // type rectype = {name:string, id: int}
 
+  env::TEnvPtr declared_types = new env::TEnv();
+
   for (auto tydec : this->types_->GetList()) {
     /* tydec -> type type-id = ty */
 
@@ -478,13 +508,20 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
     auto type = tydec->ty_->SemAnalyze(tenv, errormsg);
 
     // TODO: HACK for test 16: If type equals NameTy, break.
-    if (dynamic_cast<type::NameTy *>(type) != nullptr) {
+    if (dynamic_cast<type::NameTy *>(type->ActualTy()) != nullptr) {
       errormsg->Error(tydec->ty_->pos_, "illegal type cycle");
       break;
     }
 
     // Bind Name With Type
     tenv->Enter(tydec->name_, type);
+    if (auto old_type = declared_types->Look(tydec->name_)) {
+      if (!old_type->IsSameType(type)) {
+        errormsg->Error(tydec->ty_->pos_, "two types have the same name");
+        continue;
+      }
+    }
+    declared_types->Enter(tydec->name_, type);
   }
 }
 
@@ -498,9 +535,10 @@ type::Ty *NameTy::SemAnalyze(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
 
   // TODO: 只要到达任何Ty_Name类型，transTy就应停止？
   auto type = tenv->Look(this->name_);
-  // if type == nullptr: Undefined Type Name.
-  // Return a type that can have an actual type of nullptr.
-  return new type::NameTy(this->name_, type);
+  if (type == nullptr) {
+    type = new type::NameTy(this->name_, nullptr);
+  }
+  return type;
 }
 
 type::Ty *RecordTy::SemAnalyze(env::TEnvPtr tenv,
