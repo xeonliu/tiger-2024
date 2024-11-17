@@ -134,7 +134,7 @@ type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   }
 
   // 2. Check whether arguments are defined
-  for (auto arg: this->args_->GetList()) {
+  for (auto arg : this->args_->GetList()) {
     arg->SemAnalyze(venv, tenv, labelcount, errormsg);
   }
 
@@ -149,10 +149,32 @@ type::Ty *OpExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   auto right = this->right_->SemAnalyze(venv, tenv, labelcount, errormsg);
 
   // Must be same type. Either both int or both string.
-  if (!left->IsSameType(right)) {
-    errormsg->Error(this->pos_, "same type required");
+  // For Test 16
+  switch (oper) {
+  // For Test 13 & 14. Comparison.
+  case Oper::GE_OP:
+  case Oper::GT_OP:
+  case Oper::LE_OP:
+  case Oper::LT_OP:
+  case Oper::NEQ_OP:
+    if (!left->IsSameType(right)) {
+      errormsg->Error(this->pos_, "same type required");
+    }
+    break;
+  // For Test 16. Alrithmetic
+  case Oper::PLUS_OP:
+  case Oper::MINUS_OP:
+  case Oper::TIMES_OP:
+  case Oper::DIVIDE_OP:
+    using type::IntTy;
+    if (!left->IsSameType(IntTy::Instance())) {
+      errormsg->Error(left_->pos_, "integer required");
+    }
+    if (!right->IsSameType(IntTy::Instance())) {
+      errormsg->Error(left_->pos_, "integer required");
+    }
+    break;
   }
-
   return type::IntTy::Instance();
 }
 
@@ -375,7 +397,9 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     // Fundec: name, params, result
 
     // 1. Result Type
-    type::Ty *result_ty = tenv->Look(fundec->result_);
+    // NOTE: fundec->result_ can be nullptr.
+    type::Ty *result_ty =
+        fundec->result_ ? tenv->Look(fundec->result_) : type::VoidTy::Instance();
 
     // //   Field(int pos, sym::Symbol *name, sym::Symbol *typ)
     // //  : pos_(pos), name_(name), typ_(typ), escape_(true) {}
@@ -402,7 +426,17 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
       venv->Enter(field->name_, new env::VarEntry(field->ty_));
     }
     // 3. Deal with Body
-    fundec->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    auto body_type =
+        fundec->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+    env::FunEntry *func_entry =
+        dynamic_cast<env::FunEntry *>(venv->Look(fundec->name_));
+
+    if (func_entry->result_->IsSameType(type::VoidTy::Instance()) &&
+        !body_type->IsSameType(type::VoidTy::Instance())) {
+      errormsg->Error(this->pos_, "procedure returns value");
+    }
+
     venv->EndScope();
   }
 }
@@ -444,7 +478,7 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
     auto type = tydec->ty_->SemAnalyze(tenv, errormsg);
 
     // TODO: HACK for test 16: If type equals NameTy, break.
-    if(dynamic_cast<type::NameTy*>(type)!=nullptr) {
+    if (dynamic_cast<type::NameTy *>(type) != nullptr) {
       errormsg->Error(tydec->ty_->pos_, "illegal type cycle");
       break;
     }
