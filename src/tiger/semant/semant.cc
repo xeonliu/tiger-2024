@@ -242,8 +242,8 @@ type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     }
     return exp2_type;
   } else {
-    if (exp2_type != type::VoidTy::Instance()) {
-      errormsg->Error(this->pos_, "Expression 2 cannot have type");
+    if (!exp2_type->IsSameType(type::VoidTy::Instance())) {
+      errormsg->Error(this->pos_, "if-then exp's body must produce no value");
     }
     return type::VoidTy::Instance();
   }
