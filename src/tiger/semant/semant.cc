@@ -143,12 +143,9 @@ type::Ty *OpExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   auto left = this->left_->SemAnalyze(venv, tenv, labelcount, errormsg);
   auto right = this->right_->SemAnalyze(venv, tenv, labelcount, errormsg);
 
-  if(!left->IsSameType(type::IntTy::Instance())) {
-    errormsg->Error(this->pos_, "integer required");
-  }
-
-  if(!left->IsSameType(type::IntTy::Instance())) {
-    errormsg->Error(this->pos_, "integer required");
+  // Must be same type. Either both int or both string.
+  if(!left->IsSameType(right)) {
+    errormsg->Error(this->pos_, "same type required");
   }
 
   return type::IntTy::Instance();
