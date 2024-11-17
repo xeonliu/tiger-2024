@@ -283,7 +283,7 @@ type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   if (this->elsee_) {
     auto exp3_type = this->elsee_->SemAnalyze(venv, tenv, labelcount, errormsg);
     if (!exp2_type->IsSameType(exp3_type)) {
-      errormsg->Error(this->pos_, "Type mismatch");
+      errormsg->Error(this->pos_, "then exp and else exp type mismatch");
     }
     return exp2_type;
   } else {
@@ -477,6 +477,9 @@ void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
   // If the type is not specified, the variable’s type comes from the
   // expression.
   if (this->typ_ == nullptr) {
+    if(exp_type->IsSameType(type::NilTy::Instance())) {
+      errormsg->Error(this->pos_, "init should not be nil without type specified");
+    }
     venv->Enter(this->var_, new env::VarEntry(exp_type));
   } else {
     auto typ_type = tenv->Look(this->typ_);
