@@ -81,7 +81,7 @@ public:
   virtual void Print(FILE *out, int d) const = 0;
   virtual type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount,
-                               err::ErrorMsg *errormsg) const = 0;
+                               err::ErrorMsg *errormsg, bool readonly = true) const = 0;
 
 protected:
   explicit Var(int pos) : pos_(pos) {}
@@ -96,7 +96,7 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
-                       err::ErrorMsg *errormsg) const override;
+                       err::ErrorMsg *errormsg, bool readonly) const override;
 };
 
 // var.sym
@@ -111,7 +111,7 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
-                       err::ErrorMsg *errormsg) const override;
+                       err::ErrorMsg *errormsg, bool readonly) const override;
 };
 
 class SubscriptVar : public Var {
@@ -125,7 +125,7 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
-                       err::ErrorMsg *errormsg) const override;
+                       err::ErrorMsg *errormsg, bool readonly) const override;
 };
 
 /**

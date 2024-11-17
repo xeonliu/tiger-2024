@@ -16,7 +16,7 @@ void AbsynTree::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 }
 
 type::Ty *SimpleVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
-                                int labelcount, err::ErrorMsg *errormsg) const {
+                                int labelcount, err::ErrorMsg *errormsg, bool readonly) const {
   // Determine Type of var and return it.
   // Singeleton
   // Have Access to this->sym_
@@ -37,6 +37,11 @@ type::Ty *SimpleVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     // TODO: What should I return?
     return nullptr;
   }
+
+  // Check if the var is required to be readonly
+  if(!readonly && var_entry->readonly_) {
+    errormsg->Error(this->pos_, "loop variable can't be assigned");
+  }
   
   // 3. Sometimes VarEntry may have type::NameTy type.
   // However we should return an "Actual Type", which traces up to their final definition.
@@ -44,7 +49,7 @@ type::Ty *SimpleVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 }
 
 type::Ty *FieldVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
-                               int labelcount, err::ErrorMsg *errormsg) const {
+                               int labelcount, err::ErrorMsg *errormsg, bool readonly) const {
   /* TODO: Put your lab4 code here */
   // How to get the type of var.sym?
 
@@ -78,7 +83,7 @@ type::Ty *FieldVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 
 type::Ty *SubscriptVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    int labelcount,
-                                   err::ErrorMsg *errormsg) const {
+                                   err::ErrorMsg *errormsg, bool readonly) const {
   /* TODO: Put your lab4 code here */
   type::ArrayTy* array_ty = dynamic_cast<type::ArrayTy*>(
     this->var_->SemAnalyze(venv, tenv, labelcount, errormsg)
@@ -208,7 +213,13 @@ type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
 
-  type::Ty* var_type = this->var_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  // TODO: Check if the var_ can be assaigned!
+  // test11.tig:3.12:loop variable can't be assigned
+  // Well. All Vars should be able to be assigned?
+  // Maybe we should handle it at var.
+  // But what about varexp?
+  // I think I have to change the function signature!
+  type::Ty* var_type = this->var_->SemAnalyze(venv, tenv, labelcount, errormsg, false);
   type::Ty* exp_type = this->exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
 
   if(!var_type->IsSameType(exp_type)) {
@@ -261,8 +272,12 @@ type::Ty *ForExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   auto exp1_type = this->lo_->SemAnalyze(venv, tenv, labelcount, errormsg);
   auto exp2_type = this->hi_->SemAnalyze(venv, tenv, labelcount, errormsg);
 
-  if(!exp1_type->IsSameType(exp2_type)) {
-    errormsg->Error(this->pos_, "exp1 & exp2 doesn't have the same type");
+  if (!exp1_type->IsSameType(type::IntTy::Instance())) {
+    errormsg->Error(this->lo_->pos_, "for exp's range type is not integer");
+  }
+
+  if (!exp2_type->IsSameType(type::IntTy::Instance())) {
+    errormsg->Error(this->hi_->pos_, "for exp's range type is not integer");
   }
 
   // id := 
