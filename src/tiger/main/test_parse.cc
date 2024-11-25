@@ -4,6 +4,16 @@
 #include "tiger/absyn/absyn.h"
 #include "tiger/parse/parser.h"
 
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+
+// define here to parse compilation
+llvm::IRBuilder<> *ir_builder;
+llvm::Module *ir_module;
+frame::RegManager *reg_manager;
+frame::Frags frags;
+
 int main(int argc, char **argv) {
   std::unique_ptr<absyn::AbsynTree> absyn_tree;
 

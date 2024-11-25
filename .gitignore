@@ -33,3 +33,5 @@ _deps
 .DS_Store
 *.log
 
+# llvm source
+testdata/lab5or6/testcases/*.ll

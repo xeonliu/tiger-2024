@@ -39,7 +39,7 @@ We provide you a Docker image that has already installed all the dependencies. Y
 
 ## Compiling and Debugging
 
-There are five makeable targets in total, including `test_slp`, `test_lex`, `test_parse`, `test_semant`,  and `tiger-compiler`.
+There are five makeable targets in total, including `test_slp`, `test_lex`, `test_parse`, `test_semant`,  and `test_translate_llvm`.
 
 1. Run container environment and attach to it, here is a simple example:
 
@@ -66,9 +66,6 @@ mkdir build && cd build && cmake .. && make test_xxx  # or `make build`
 ```bash
 gdb test_xxx # e.g. `gdb test_slp`
 ```
-
-**Note: we will use `-DCMAKE_BUILD_TYPE=Release` to grade your labs, so make
-sure your lab passed the released version**
 
 ## Testing Your Labs
 

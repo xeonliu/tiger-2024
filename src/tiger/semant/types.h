@@ -3,6 +3,13 @@
 
 #include "tiger/symbol/symbol.h"
 #include <list>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Value.h>
+#include <string>
 
 namespace type {
 
@@ -14,6 +21,7 @@ class Ty {
 public:
   virtual Ty *ActualTy();
   virtual bool IsSameType(Ty *);
+  virtual llvm::Type *GetLLVMType();
 
 protected:
   Ty() = default;
@@ -22,6 +30,7 @@ protected:
 class NilTy : public Ty {
 public:
   static NilTy *Instance() { return &nilty_; }
+  llvm::Type *GetLLVMType() override;
 
 private:
   static NilTy nilty_;
@@ -30,6 +39,7 @@ private:
 class IntTy : public Ty {
 public:
   static IntTy *Instance() { return &intty_; }
+  llvm::Type *GetLLVMType() override;
 
 private:
   static IntTy intty_;
@@ -39,13 +49,20 @@ class StringTy : public Ty {
 public:
   static StringTy *Instance() { return &stringty_; }
 
+  static void InitStringLLVMType();
+  llvm::Type *GetLLVMType() override;
+  static llvm::Value *CreateGlobalStringStructPtr(std::string str);
+
 private:
   static StringTy stringty_;
+  static llvm::StructType *string_llvm_type_;
+  static llvm::PointerType *string_ptr_llvm_type_;
 };
 
 class VoidTy : public Ty {
 public:
   static VoidTy *Instance() { return &voidty_; }
+  llvm::Type *GetLLVMType() override;
 
 private:
   static VoidTy voidty_;
@@ -54,14 +71,18 @@ private:
 class RecordTy : public Ty {
 public:
   FieldList *fields_;
+  llvm::Type *GetLLVMType() override;
+  explicit RecordTy(FieldList *fields) : fields_(fields) { llvm_type_ = NULL; }
 
-  explicit RecordTy(FieldList *fields) : fields_(fields) {}
+private:
+  llvm::Type *llvm_type_;
 };
 
 class ArrayTy : public Ty {
 public:
   Ty *ty_;
-
+  llvm::Type *GetLLVMType() override;
+  llvm::Type *GetLLVMTypeWithLen(int len);
   explicit ArrayTy(Ty *ty) : ty_(ty) {}
 };
 
@@ -69,7 +90,7 @@ class NameTy : public Ty {
 public:
   sym::Symbol *sym_;
   Ty *ty_;
-
+  llvm::Type *GetLLVMType() override;
   NameTy(sym::Symbol *sym, Ty *ty) : sym_(sym), ty_(ty) {}
 
   Ty *ActualTy() override;

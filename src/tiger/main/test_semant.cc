@@ -6,6 +6,12 @@
 #include "tiger/parse/parser.h"
 #include "tiger/semant/semant.h"
 
+// define here to pass compilation
+frame::RegManager *reg_manager;
+frame::Frags *frags;
+llvm::IRBuilder<> *ir_builder;
+llvm::Module *ir_module;
+
 int main(int argc, char **argv) {
   std::unique_ptr<absyn::AbsynTree> absyn_tree;
   std::unique_ptr<err::ErrorMsg> errormsg;
