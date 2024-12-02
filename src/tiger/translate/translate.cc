@@ -53,7 +53,6 @@ class ValAndTy {
 public:
   type::Ty *ty_;
   llvm::Value *val_;
-  llvm::BasicBlock *last_bb_;
 
   ValAndTy(llvm::Value *val, type::Ty *ty) : val_(val), ty_(ty) {}
 };
