@@ -41,6 +41,9 @@ public:
       : EnvEntry(readonly), ty_(ty), access_(access){};
 };
 
+/**
+  FunEntry Contains type of formals & result
+ */
 class FunEntry : public EnvEntry {
 public:
   tr::Level *level_;

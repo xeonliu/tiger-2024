@@ -59,6 +59,7 @@ private:
   static llvm::PointerType *string_ptr_llvm_type_;
 };
 
+// No Value
 class VoidTy : public Ty {
 public:
   static VoidTy *Instance() { return &voidty_; }

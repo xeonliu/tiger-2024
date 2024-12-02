@@ -85,16 +85,21 @@ public:
   virtual void Print(FILE *out, int d) const = 0;
   virtual type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount,
+<<<<<<< HEAD
                                err::ErrorMsg *errormsg) const = 0;
   virtual tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level,
                                   err::ErrorMsg *errormsg) const = 0;
   virtual void Traverse(esc::EscEnvPtr env, int depth) = 0;
+=======
+                               err::ErrorMsg *errormsg, bool readonly = true) const = 0;
+>>>>>>> lab4
 
 protected:
   explicit Var(int pos) : pos_(pos) {}
 };
 
+// ID only lvalue
 class SimpleVar : public Var {
 public:
   sym::Symbol *sym_;
@@ -103,13 +108,18 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
+<<<<<<< HEAD
                        err::ErrorMsg *errormsg) const override;
   tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                           tr::Level *level,
                           err::ErrorMsg *errormsg) const override;
   void Traverse(esc::EscEnvPtr env, int depth) override;
+=======
+                       err::ErrorMsg *errormsg, bool readonly) const override;
+>>>>>>> lab4
 };
 
+// var.sym
 class FieldVar : public Var {
 public:
   Var *var_;
@@ -121,11 +131,15 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
+<<<<<<< HEAD
                        err::ErrorMsg *errormsg) const override;
   tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                           tr::Level *level,
                           err::ErrorMsg *errormsg) const override;
   void Traverse(esc::EscEnvPtr env, int depth) override;
+=======
+                       err::ErrorMsg *errormsg, bool readonly) const override;
+>>>>>>> lab4
 };
 
 class SubscriptVar : public Var {
@@ -139,11 +153,15 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
+<<<<<<< HEAD
                        err::ErrorMsg *errormsg) const override;
   tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                           tr::Level *level,
                           err::ErrorMsg *errormsg) const override;
   void Traverse(esc::EscEnvPtr env, int depth) override;
+=======
+                       err::ErrorMsg *errormsg, bool readonly) const override;
+>>>>>>> lab4
 };
 
 /**
@@ -267,6 +285,9 @@ public:
   void Traverse(esc::EscEnvPtr env, int depth) override;
 };
 
+/**
+  type-id {id = exp{,id=exp}}
+ */
 class RecordExp : public Exp {
 public:
   sym::Symbol *typ_;

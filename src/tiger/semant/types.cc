@@ -16,6 +16,9 @@ Ty *Ty::ActualTy() { return this; }
 
 Ty *NameTy::ActualTy() {
   assert(ty_ != this);
+  if(ty_ == nullptr) {
+    return this;
+  }
   return ty_->ActualTy();
 }
 
