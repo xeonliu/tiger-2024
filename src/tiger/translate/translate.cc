@@ -8,6 +8,7 @@
 #include <list>
 #include <llvm-14/llvm/ADT/APInt.h>
 #include <llvm-14/llvm/IR/BasicBlock.h>
+#include <llvm-14/llvm/IR/Constant.h>
 #include <llvm-14/llvm/IR/Constants.h>
 #include <llvm-14/llvm/IR/DataLayout.h>
 #include <llvm-14/llvm/IR/DerivedTypes.h>
@@ -97,6 +98,7 @@ void ProgTr::OutputIR(std::string_view filename) {
 }
 
 void ProgTr::Translate() {
+  /* C Functions are included Here */
   FillBaseVEnv();
   FillBaseTEnv();
   /* TODO: Put your lab5-part1 code here */
@@ -117,32 +119,38 @@ void ProgTr::Translate() {
       llvm::Function::Create(alloc_record_type, llvm::Function::ExternalLinkage,
                              "alloc_record", ir_module);
 
-  // // tiger_main
-  // llvm::FunctionType *tiger_main_type = llvm::FunctionType::get(
-  //     ir_builder->getInt32Ty(),
-  //     {ir_builder->getInt64Ty(), ir_builder->getInt64Ty()}, false);
+  // tiger_main
+  llvm::FunctionType *tiger_main_type = llvm::FunctionType::get(
+      ir_builder->getInt32Ty(),
+      {ir_builder->getInt64Ty(), ir_builder->getInt64Ty()}, false);
 
-  // llvm::Function *tiger_main_func = llvm::Function::Create(
-  //     tiger_main_type, llvm::Function::ExternalLinkage, "tigermain",
-  //     ir_module);
+  llvm::Function *tiger_main_func = llvm::Function::Create(
+      tiger_main_type, llvm::Function::ExternalLinkage, "tigermain", ir_module);
 
-  // // tiger_main:
-  // llvm::BasicBlock *entry_bb = llvm::BasicBlock::Create(
-  //     ir_builder->getContext(), "tigermain", tiger_main_func);
-  // ir_builder->SetInsertPoint(entry_bb);
+  // @tigermain_framesize_global
+  llvm::GlobalVariable *framesize_global = new llvm::GlobalVariable(
+      *ir_module, ir_builder->getInt64Ty(), false,
+      llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantInt::get(ir_builder->getInt64Ty(), 0),
+      "tigermain_framesize_global");
 
-  // llvm::Function::arg_iterator args = tiger_main_func->arg_begin();
-  // llvm::Value *sp_arg = args++;
-  // llvm::Value *sl_arg = args++;
+  // tiger_main:
+  llvm::BasicBlock *entry_bb = llvm::BasicBlock::Create(
+      ir_builder->getContext(), "tigermain", tiger_main_func);
+  ir_builder->SetInsertPoint(entry_bb);
 
-  // llvm::GlobalVariable *framesize_global =
-  //     ir_module->getGlobalVariable("tigermain_framesize_global");
-  // llvm::Value *framesize_val =
-  //     ir_builder->CreateLoad(ir_builder->getInt64Ty(), framesize_global);
-  // llvm::Value *new_sp = ir_builder->CreateSub(sp_arg, framesize_val);
+  llvm::Function::arg_iterator args = tiger_main_func->arg_begin();
+  llvm::Value *sp_arg = args++;
+  llvm::Value *sl_arg = args++;
+
+  llvm::Value *framesize_val =
+      ir_builder->CreateLoad(ir_builder->getInt64Ty(), framesize_global);
+  llvm::Value *new_sp =
+      ir_builder->CreateSub(sp_arg, framesize_val, "tiger_main_sp");
 
   this->absyn_tree_->Translate(this->venv_.get(), this->tenv_.get(),
                                this->main_level_.get(), this->errormsg_.get());
+  ir_builder->CreateRet(ir_builder->getInt32(0));
 }
 
 } // namespace tr
@@ -751,7 +759,11 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   ir_builder->SetInsertPoint(next_bb);
 
-  return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
+  // TODO: Use Phi to return the correct value
+
+  if (!this->elsee_) {
+    return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
+  }
 }
 
 tr::ValAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -863,6 +875,7 @@ tr::ValAndTy *LetExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   for (auto dec : decs) {
     dec->Translate(venv, tenv, level, errormsg);
   }
+  // FIXME: Where does these expressions belong?
   auto val_ty = this->body_->Translate(venv, tenv, level, errormsg);
   venv->EndScope();
   return val_ty;

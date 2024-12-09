@@ -274,6 +274,10 @@ type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   return type::VoidTy::Instance();
 }
 
+/*
+  Return a value if and only if has else
+  Otherwise return void
+*/
 type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                             int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
