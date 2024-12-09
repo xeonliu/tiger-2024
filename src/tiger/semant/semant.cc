@@ -94,7 +94,7 @@ type::Ty *SubscriptVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     errormsg->Error(this->pos_, "array type required");
   }
 
-  return array_ty->ActualTy();
+  return array_ty->ty_->ActualTy();
 }
 
 type::Ty *VarExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,

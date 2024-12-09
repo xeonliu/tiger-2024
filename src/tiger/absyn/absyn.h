@@ -84,16 +84,12 @@ public:
   virtual ~Var() = default;
   virtual void Print(FILE *out, int d) const = 0;
   virtual type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
-                               int labelcount,
-<<<<<<< HEAD
-                               err::ErrorMsg *errormsg) const = 0;
+                               int labelcount, err::ErrorMsg *errormsg,
+                               bool readonly = true) const = 0;
   virtual tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level,
                                   err::ErrorMsg *errormsg) const = 0;
   virtual void Traverse(esc::EscEnvPtr env, int depth) = 0;
-=======
-                               err::ErrorMsg *errormsg, bool readonly = true) const = 0;
->>>>>>> lab4
 
 protected:
   explicit Var(int pos) : pos_(pos) {}
@@ -108,15 +104,11 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
-<<<<<<< HEAD
-                       err::ErrorMsg *errormsg) const override;
+                       err::ErrorMsg *errormsg, bool readonly) const override;
   tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                           tr::Level *level,
                           err::ErrorMsg *errormsg) const override;
   void Traverse(esc::EscEnvPtr env, int depth) override;
-=======
-                       err::ErrorMsg *errormsg, bool readonly) const override;
->>>>>>> lab4
 };
 
 // var.sym
@@ -131,15 +123,11 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
-<<<<<<< HEAD
-                       err::ErrorMsg *errormsg) const override;
+                       err::ErrorMsg *errormsg, bool readonly) const override;
   tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                           tr::Level *level,
                           err::ErrorMsg *errormsg) const override;
   void Traverse(esc::EscEnvPtr env, int depth) override;
-=======
-                       err::ErrorMsg *errormsg, bool readonly) const override;
->>>>>>> lab4
 };
 
 class SubscriptVar : public Var {
@@ -153,15 +141,11 @@ public:
 
   void Print(FILE *out, int d) const override;
   type::Ty *SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
-<<<<<<< HEAD
-                       err::ErrorMsg *errormsg) const override;
+                       err::ErrorMsg *errormsg, bool readonly) const override;
   tr::ValAndTy *Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                           tr::Level *level,
                           err::ErrorMsg *errormsg) const override;
   void Traverse(esc::EscEnvPtr env, int depth) override;
-=======
-                       err::ErrorMsg *errormsg, bool readonly) const override;
->>>>>>> lab4
 };
 
 /**
@@ -286,6 +270,7 @@ public:
 };
 
 /**
+  The expression creates a new record instance of type `type-id`
   type-id {id = exp{,id=exp}}
  */
 class RecordExp : public Exp {
@@ -306,6 +291,10 @@ public:
   void Traverse(esc::EscEnvPtr env, int depth) override;
 };
 
+/**
+  expr-seq; expr
+  0个或多个用分号分隔的表达式
+ */
 class SeqExp : public Exp {
 public:
   ExpList *seq_;
@@ -373,6 +362,9 @@ public:
   void Traverse(esc::EscEnvPtr env, int depth) override;
 };
 
+/**
+  for id := expr to expr do expr
+ */
 class ForExp : public Exp {
 public:
   sym::Symbol *var_;

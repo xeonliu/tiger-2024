@@ -19,6 +19,10 @@ class Level;
 } // namespace tr
 
 namespace env {
+/**
+  在Declaration时创建Entry
+  在计算Expression时使用Entry
+  */
 class EnvEntry {
 public:
   bool readonly_;

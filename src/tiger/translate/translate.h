@@ -26,6 +26,9 @@ public:
   static Access *AllocLocal(Level *level, bool escape);
 };
 
+/**
+  追踪不同函数之间level的相对关系，便于实现 Static Link
+ */
 class Level {
 public:
   frame::Frame *frame_;

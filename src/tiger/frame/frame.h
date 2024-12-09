@@ -74,15 +74,48 @@ public:
   /* TODO: Put your lab5-part1 code here */
 
   virtual ~Access() = default;
+  virtual llvm::Value *ToLLVMVal(llvm::Value *fp) const = 0;
 };
 
+/**
+  foo():
+    dec X, Y, Z
+    bar(X, Y+Z)
+  
+  ---------------------- foo's stack top
+    | Z           |
+    | Y           |       local vars in foo
+    | X           |
+    -------------------- (-offset)
+    | arg2        |
+    | arg1        |       args for bar. Belong to Foo's Allocation Actual Frame Size
+    | Static Link |
+    -------------------- (outgo_size_)
+    | Return Address |
+    -------------------- bar's stack top
+    | k |
+    | j |
+    | i |
+
+ */
 class Frame {
 public:
+  // 是一个整数，表示函数调用时需要为传递给其他函数的参数预留的栈空间的大小
+  // 给传参和Static Link 预留的
+  // 在构造时初始化，在AllocOutgoSpace中修改
   int outgo_size_;
+  // offset_是一个整数，表示当前Frame中局部变量和参数的偏移量，是一个负数
+  // 在构造时初始化，在AllocLocal中再次修改
+  // 表示下一次分配InFrameAccess时其Access的值？
+  // 同时体现了已经分配的本地变量区域的尺寸
   int offset_;
+  // 函数名？
   temp::Label *name_;
+  // 这个Formals是给哪一层的？
+  // 形式参数 & Static Link
   std::list<frame::Access *> *formals_;
   llvm::GlobalVariable *framesize_global;
+  // 栈顶指针
   llvm::Value *sp;
 
   Frame(int outgo_size, int offset, temp::Label *name,
@@ -95,6 +128,11 @@ public:
   [[nodiscard]] virtual std::list<frame::Access *> *Formals() const = 0;
   virtual frame::Access *AllocLocal(bool escape) = 0;
   virtual void AllocOutgoSpace(int size) = 0;
+  /**
+    offset_ 负数，局部变量和参数的偏移量
+    outgo_size_ 预留的栈空间的大小
+    8 返回地址的大小
+   */
   int calculateActualFramesize() {
     return (-offset_ + outgo_size_) + 8;
   }
@@ -163,6 +201,11 @@ private:
   std::list<Frag *> frags_;
 };
 
+/**
+  接受一个函数名和一个布尔列表，表示参数是否需要逃逸（在堆上分配）
+  @param name 函数名称
+  @param formals 函数参数是否需要逃逸
+ */
 frame::Frame *NewFrame(temp::Label *name, std::list<bool> formals);
 
 } // namespace frame
