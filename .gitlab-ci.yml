@@ -33,3 +33,17 @@ test_lab5_part1:
   stage: test
   script:
     - make gradelab5-1
+test_lab5_part2:
+  image: ipadsse302/tigerlabs_env:2.0.0
+  tags:
+    - r743
+  stage: test
+  script:
+    - make gradelab5-2
+test_lab5:
+  image: ipadsse302/tigerlabs_env:2.0.0
+  tags:
+    - r743
+  stage: test
+  script:
+    - make gradelab5

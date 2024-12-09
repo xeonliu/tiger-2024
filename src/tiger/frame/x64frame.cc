@@ -89,7 +89,6 @@ public:
   /* TODO: Put your lab5-part1 code here */
 };
 
-
 class X64Frame : public Frame {
 public:
   X64Frame(temp::Label *name, std::list<frame::Access *> *formals)
@@ -118,5 +117,46 @@ frame::Frame *NewFrame(temp::Label *name, std::list<bool> formals) {
   /* TODO: Put your lab5-part1 code here */
 }
 
+/**
+ * Moving incoming formal parameters, the saving and restoring of callee-save
+ * Registers
+ * @param frame curruent frame
+ * @param stm statements
+ * @return statements with saving, restoring and view shift
+ */
+assem::InstrList *ProcEntryExit1(std::string_view function_name,
+                                 assem::InstrList *body) {
+  // TODO: your lab5 code here
+  return body;
+}
+
+/**
+ * Appends a “sink” instruction to the function body to tell the register
+ * allocator that certain registers are live at procedure exit
+ * @param body function body
+ * @return instructions with sink instruction
+ */
+assem::InstrList *ProcEntryExit2(assem::InstrList *body) {
+  body->Append(new assem::OperInstr("", new temp::TempList(),
+                                    reg_manager->ReturnSink(), nullptr));
+  return body;
+}
+
+/**
+ * The procedure entry/exit sequences
+ * @param frame the frame of current func
+ * @param body current function body
+ * @return whole instruction list with prolog_ end epilog_
+ */
+assem::Proc *ProcEntryExit3(std::string_view function_name,
+                            assem::InstrList *body) {
+  std::string prologue = "";
+  std::string epilogue = "";
+
+  // TODO: your lab5 code here
+  return new assem::Proc(prologue, body, epilogue);
+}
+
+void Frags::PushBack(Frag *frag) { frags_.emplace_back(frag); }
 
 } // namespace frame

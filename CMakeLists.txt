@@ -109,17 +109,12 @@ add_executable(test_translate_llvm "src/tiger/main/test_translate_llvm.cc" ${TIG
 add_dependencies(test_translate_llvm lex_parse_sources)
 target_link_libraries(test_translate_llvm ${llvm_libs})
 
-# # lab 5 part 2
-# add_executable(test_codegen "src/tiger/main/test_codegen.cc" ${TIGER_SOURCES} ${TIGER_LEX_PARSE_SOURCES})
-# add_dependencies(test_codegen lex_parse_sources)
-# target_link_libraries(test_codegen ${llvm_libs})
+# lab 5 part 2
+add_executable(test_codegen "src/tiger/main/test_codegen.cc" ${TIGER_SOURCES} ${TIGER_LEX_PARSE_SOURCES})
+add_dependencies(test_codegen lex_parse_sources)
+target_link_libraries(test_codegen ${llvm_libs})
 
 # # lab 6
 # add_executable(tiger-compiler "src/tiger/main/main.cc" ${TIGER_SOURCES} ${TIGER_LEX_PARSE_SOURCES})
 # add_dependencies(tiger-compiler lex_parse_sources)
 # target_link_libraries(tiger-compiler ${llvm_libs})
-
-# add_executable(test_translate_ir "src/tiger/main/test_translate_ir.cc" ${TIGER_SOURCES} ${TIGER_LEX_PARSE_SOURCES})
-# add_dependencies(test_translate_ir lex_parse_sources)
-# target_link_libraries(test_translate_ir ${llvm_libs})
-

@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "tiger/codegen/assem.h"
 #include "tiger/frame/temp.h"
 
 #include <llvm/IR/Function.h>
@@ -95,9 +96,7 @@ public:
   [[nodiscard]] virtual std::list<frame::Access *> *Formals() const = 0;
   virtual frame::Access *AllocLocal(bool escape) = 0;
   virtual void AllocOutgoSpace(int size) = 0;
-  int calculateActualFramesize() {
-    return (-offset_ + outgo_size_) + 8;
-  }
+  int calculateActualFramesize() { return (-offset_ + outgo_size_) + 8; }
 };
 
 /**
@@ -164,6 +163,10 @@ private:
 };
 
 frame::Frame *NewFrame(temp::Label *name, std::list<bool> formals);
+
+assem::InstrList *ProcEntryExit1(std::string_view fs, assem::InstrList *body);
+assem::InstrList *ProcEntryExit2(assem::InstrList *body);
+assem::Proc *ProcEntryExit3(std::string_view fs, assem::InstrList *body);
 
 } // namespace frame
 

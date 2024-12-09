@@ -35,3 +35,6 @@ _deps
 
 # llvm source
 testdata/lab5or6/testcases/*.ll
+
+# python cache
+scripts/lab5_test/__pycache__/

@@ -149,7 +149,7 @@ test_lab5_part1() {
     testcase_name=$(basename "$testcase" | cut -f1 -d".")
     local ref=${ref_dir}/${testcase_name}.out
     rm -f "${testcase}.ll"
-    ./test_translate_llvm "$testcase" &> /tmp/tiger_err.log
+    ./test_translate_llvm "$testcase" &>/tmp/tiger_err.log
     if [[ $? != 0 ]]; then
       echo -e "\e[31mError\e[0m: test_translate_llvm error [$testcase_name]"
       mv /tmp/tiger_err.log "${testcase}.err.log"
@@ -178,7 +178,7 @@ test_lab5_part1() {
           full_score=0
           continue
         fi
-  
+
         echo -e "\e[34mPASS\e[0m: [$testcase_name/$mergecase_name]"
       done
     else
@@ -198,6 +198,62 @@ test_lab5_part1() {
 
   if [[ $full_score == 0 ]]; then
     echo "${score_str}: 0"
+    exit 1
+  else
+    echo "[^_^]: Pass"
+    echo "${score_str}: 100"
+  fi
+}
+
+test_lab5_part2() {
+  local score_str="LAB5 PART2 SCORE"
+  local main_script=${WORKDIR}/scripts/lab5_test/main.py
+  local testcase_dir=${WORKDIR}/testdata/lab5or6/testcases
+  local llvm_ref_dir=${WORKDIR}/testdata/lab5or6/llvm-refs
+  local ref_dir=${WORKDIR}/testdata/lab5or6/refs
+  local mergecase_dir=$testcase_dir/merge
+  local mergeref_dir=$ref_dir/merge
+  local score=0
+  local full_score=1
+  local testcase_name
+  local mergecase_name
+
+  build test_codegen
+  for llvm_ir in "$llvm_ref_dir"/*.ll; do
+    testcase_name=$(basename "$llvm_ir" | cut -f1 -d".")
+    local ref=${ref_dir}/${testcase_name}.out
+    local assem=$llvm_ref_dir/$testcase_name.tig.s
+    ./test_codegen "$llvm_ir" >&/dev/null
+    if [[ $testcase_name == "merge" ]]; then
+      for mergecase in "$mergecase_dir"/*.in; do
+        mergecase_name=$(basename "$mergecase" | cut -f1 -d".")
+        local mergeref=${mergeref_dir}/${mergecase_name}.out
+        python3 ${main_script} ${assem} <"$mergecase" >&/tmp/output.txt
+        diff -w -B /tmp/output.txt "$mergeref"
+        if [[ $? != 0 ]]; then
+          echo "Error: Output mismatch [$testcase_name/$mergecase_name]"
+          full_score=0
+          continue
+        fi
+        score=$((score + 5))
+        echo "Pass $testcase_name/$mergecase_name"
+      done
+    else
+      python3 ${main_script} ${assem} >&/tmp/output.txt
+      diff -w -B /tmp/output.txt "$ref"
+      if [[ $? != 0 ]]; then
+        echo "Error: Output mismatch [$testcase_name]"
+        full_score=0
+        continue
+      fi
+      echo "Pass $testcase_name"
+      score=$((score + 5))
+    fi
+  done
+  rm -f "$llvm_ref_dir"/*.s
+
+  if [[ $full_score == 0 ]]; then
+    echo "${score_str}: ${score}"
     exit 1
   else
     echo "[^_^]: Pass"
@@ -234,7 +290,7 @@ test_lab5() {
           full_score=0
           continue
         fi
-  
+        score=$((score + 5))
         echo "Pass $testcase_name/$mergecase_name"
       done
     else
@@ -246,13 +302,13 @@ test_lab5() {
         continue
       fi
       echo "Pass $testcase_name"
-
+      score=$((score + 5))
     fi
   done
   rm -f "$testcase_dir"/*.tig.s
 
   if [[ $full_score == 0 ]]; then
-    echo "${score_str}: 0"
+    echo "${score_str}: ${score}"
     exit 1
   else
     echo "[^_^]: Pass"
@@ -297,7 +353,7 @@ test_lab6() {
           full_score=0
           continue
         fi
-  
+        score=$((score + 5))
         echo "Pass $testcase_name/$mergecase_name"
       done
     else
@@ -309,14 +365,13 @@ test_lab6() {
         continue
       fi
       echo "Pass $testcase_name"
-
+      score=$((score + 5))
     fi
   done
   rm -f "$testcase_dir"/*.tig.s
 
   if [[ $full_score == 0 ]]; then
-    echo "${score_str}: 0"
-    exit 1
+    echo "${score_str}: ${score}"
   else
     echo "[^_^]: Pass"
     echo "${score_str}: 100"
@@ -351,6 +406,9 @@ main() {
   elif [[ $scope == "lab5-part1" ]]; then
     echo "========== Lab5 part-1 Test =========="
     test_lab5_part1
+  elif [[ $scope == "lab5-part2" ]]; then
+    echo "========== Lab5 part-2 Test =========="
+    test_lab5_part2
   elif [[ $scope == "lab5" ]]; then
     echo "========== Lab5 Test =========="
     test_lab5
