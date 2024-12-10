@@ -875,7 +875,6 @@ tr::ValAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   llvm::Function *func = ir_builder->GetInsertBlock()->getParent();
   llvm::LLVMContext &context = ir_module->getContext();
 
-  // TODO: What's this?
   llvm::BasicBlock *condBB = llvm::BasicBlock::Create(context, "cond", func);
   llvm::BasicBlock *bodyBB = llvm::BasicBlock::Create(context, "body", func);
   llvm::BasicBlock *afterBB = llvm::BasicBlock::Create(context, "after", func);
@@ -886,17 +885,28 @@ tr::ValAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   tr::ValAndTy *hi_val_ty = hi_->Translate(venv, tenv, level, errormsg);
   llvm::Value *end_val = hi_val_ty->val_;
 
+  /* Copied from VarDec::Translate */
   // 创建循环变量
-  llvm::Value *var_addr = ir_builder->CreateAlloca(
-      ir_builder->getInt32Ty(), nullptr, var_->Name().c_str());
-  ir_builder->CreateStore(lo_val, var_addr);
+  tr::Access *var_access = tr::Access::AllocLocal(level, true);
+
+  // 初始化变量 (必须为IntTy)
+  llvm::Value *fp = level->get_fp(level->get_sp());
+  llvm::Value *var_addr = var_access->access_->ToLLVMVal(fp);
+  llvm::Value *var_ptr = ir_builder->CreateIntToPtr(
+      var_addr, llvm::PointerType::get(lo_val_ty->ty_->GetLLVMType(), 0));
+
+  ir_builder->CreateStore(lo_val, var_ptr);
+
+  // 将循环变量送入环境！
+  venv->BeginScope();
+  venv->Enter(this->var_, new env::VarEntry(var_access, lo_val_ty->ty_, true));
 
   // cond:
   ir_builder->CreateBr(condBB);
   ir_builder->SetInsertPoint(condBB);
 
   llvm::Value *var_val =
-      ir_builder->CreateLoad(ir_builder->getInt32Ty(), var_addr);
+      ir_builder->CreateLoad(ir_builder->getInt32Ty(), var_ptr);
   llvm::Value *cond = ir_builder->CreateICmpSLE(var_val, end_val, "cond");
 
   // Check Condition. jump to afterBB
@@ -908,9 +918,11 @@ tr::ValAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   body_->Translate(venv, tenv, level, errormsg);
   loop_stack.pop();
 
+  // 循环变量离开作用域
+  venv->EndScope();
   llvm::Value *next_val = ir_builder->CreateAdd(
       var_val, llvm::ConstantInt::get(context, llvm::APInt(32, 1)), "next_val");
-  ir_builder->CreateStore(next_val, var_addr);
+  ir_builder->CreateStore(next_val, var_ptr);
 
   // goto cond
   ir_builder->CreateBr(condBB);
