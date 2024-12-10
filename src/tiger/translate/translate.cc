@@ -43,6 +43,8 @@ extern llvm::Module *ir_module;
 /**
   这两个Stack用作什么？
  */
+// 当翻译一个Func定义时，添加进来，翻译完返回之后弹出
+// 尤其对于Let表达式，需要知道in后面的式子现在位于哪一个函数
 std::stack<llvm::Function *> func_stack;
 // 给Break用的
 std::stack<llvm::BasicBlock *> loop_stack;
@@ -277,6 +279,8 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     auto framesize_global = func_level->frame_->framesize_global;
     auto result_ty = func_entry->result_;
 
+    func_stack.push(func);
+
     /* 2. Generate VarEntry for params */
     std::list<frame::Access *> accesses =
         *func_entry->level_->frame_->Formals();
@@ -337,6 +341,8 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     } else {
       ir_builder->CreateRet(body_val_ty->val_);
     }
+
+    func_stack.pop();
 
     // FIXME： PPT or calculateActualFramesize()??
     int64_t framesize = func_level->frame_->calculateActualFramesize();
