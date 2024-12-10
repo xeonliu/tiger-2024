@@ -62,6 +62,8 @@ public:
       : formals_(formals), result_(result), level_(nullptr),
         func_type_(nullptr), func_(nullptr) {}
 
+  // This piece of shit is also for lab5.
+  // Generate build-in functions such as `printi`
   FunEntry(tr::Level *level, type::TyList *formals, type::Ty *result,
            std::string str);
 

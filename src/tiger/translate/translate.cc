@@ -154,6 +154,12 @@ void ProgTr::Translate() {
   this->absyn_tree_->Translate(this->venv_.get(), this->tenv_.get(),
                                this->main_level_.get(), this->errormsg_.get());
   ir_builder->CreateRet(ir_builder->getInt32(0));
+  // TODO: How are they binded?
+  // FIXME： PPT or calculateActualFramesize()??
+  int64_t framesize = main_level_->frame_->calculateActualFramesize();
+
+  framesize_global->setInitializer(
+      llvm::ConstantInt::get(ir_builder->getInt64Ty(), framesize));
 }
 
 } // namespace tr
@@ -538,26 +544,35 @@ tr::ValAndTy *StringExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   return new tr::ValAndTy(val, type::StringTy::Instance());
 }
 
+/**
+  FIXME: Call Expression will change the outgo size of the current frame.
+ */
 tr::ValAndTy *CallExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                  tr::Level *level,
                                  err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5-part1 code here */
   env::FunEntry *fun_entry =
       dynamic_cast<env::FunEntry *>(venv->Look(this->func_));
+
   llvm::Function *llvm_func = fun_entry->func_;
+  llvm::FunctionType *func_type = llvm_func->getFunctionType();
 
   std::vector<llvm::Value *> args;
 
-  // Stack Pointer
-  args.emplace_back(level->get_sp());
-  // Static Link
-  // FIXME: When finished, delete this line.
-  // NOTE: There can be no parent!
-  // Or should I Create a parent for all?
-  if (level->parent_) {
-    args.emplace_back(level->parent_->get_sp());
-  } else {
-    args.emplace_back(llvm::ConstantInt::get(ir_builder->getInt64Ty(), 0));
+  // TODO: Explicitly Deal with build-in functions?
+  // Check args in llvm_func.
+  // If the function needs sp and st.
+  if (func_type->getNumParams() == this->args_->GetList().size() + 2) {
+    // Stack Pointer
+    args.emplace_back(level->get_sp());
+    // Static Link
+    // NOTE: There can be no parent!
+    // Or should I Create a parent for all?
+    if (level->parent_) {
+      args.emplace_back(level->parent_->get_sp());
+    } else {
+      args.emplace_back(llvm::ConstantInt::get(ir_builder->getInt64Ty(), 0));
+    }
   }
 
   for (auto arg_exp : this->args_->GetList()) {
