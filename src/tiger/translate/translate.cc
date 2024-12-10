@@ -149,6 +149,10 @@ void ProgTr::Translate() {
   llvm::Value *new_sp =
       ir_builder->CreateSub(sp_arg, framesize_val, "tiger_main_sp");
 
+  // NOTE: Initialize the top level's sp.
+  // Otherwise segfault when storing arguments
+  main_level_->set_sp(new_sp);
+
   func_stack.push(tiger_main_func);
 
   this->absyn_tree_->Translate(this->venv_.get(), this->tenv_.get(),
@@ -241,10 +245,6 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
         llvm::ConstantInt::get(ir_builder->getInt64Ty(), 0),
         fundec->name_->Name() + "_framesize_global");
     fun_level->frame_->framesize_global = framesize_global;
-
-    // TODO: 7. Set up the `sp` of the Frame where the function is defined
-    // FIXME: Set `sp` on the next round from the arguments when functions are
-    // called.
   }
 
   /**
@@ -288,11 +288,6 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     llvm::Function::arg_iterator args = func->arg_begin();
     llvm::Value *sp_arg = args++;
 
-    // FIXME: Set The Parent's Function's sp?
-    if (!level->get_sp()) {
-      level->set_sp(sp_arg);
-    }
-
     /* 4. Build the Body */
 
     // Build a body_bb. Insert with parent specified (Otherwise SegFault)
@@ -309,11 +304,12 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     func_level->set_sp(new_sp);
 
     // Store Static Link & others
-    for (auto access : *(level->frame_->Formals())) {
+    for (auto access : *(func_level->frame_->Formals())) {
       llvm::Value *arg = args++;
-      llvm::Value *arg_addr = access->ToLLVMVal(level->get_sp());
+      // Call ToLLVMVal with the callee's runtime Stack Top (Frame Pointer)
+      llvm::Value *arg_addr = access->ToLLVMVal(sp_arg);
       llvm::Value *arg_ptr = ir_builder->CreateIntToPtr(
-          arg_addr, llvm::PointerType::get(ir_builder->getInt64Ty(), 0));
+          arg_addr, llvm::PointerType::get(arg->getType(), 0));
       ir_builder->CreateStore(arg, arg_ptr);
     }
 
@@ -405,7 +401,11 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   llvm::Value *sp = level->get_sp();
 
   // TODO: 据说Level类可用于优雅地处理Static Link
-
+  /**
+    Find the Stack Pointer of the function in which this variable is defined!
+    追溯次数可以静态确定
+    然而取值过程需要生成汇编代码以动态执行
+   */
   /** If `access` is not in `level` */
   while (level != var_entry->access_->level_) {
     /** Use Static Link */
@@ -559,28 +559,43 @@ tr::ValAndTy *CallExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   std::vector<llvm::Value *> args;
 
+  uint64_t required_outgo_size = 0;
+
   // TODO: Explicitly Deal with build-in functions?
   // Check args in llvm_func.
   // If the function needs sp and st.
   if (func_type->getNumParams() == this->args_->GetList().size() + 2) {
     // Stack Pointer
     args.emplace_back(level->get_sp());
-    // Static Link
-    // NOTE: There can be no parent!
-    // Or should I Create a parent for all?
-    if (level->parent_) {
-      args.emplace_back(level->parent_->get_sp());
-    } else {
-      args.emplace_back(llvm::ConstantInt::get(ir_builder->getInt64Ty(), 0));
+
+    // Static Link (The Stack Pointer of the function in which it is defined)
+    // 1. Deafult: Caller's sp
+    auto st = level->get_sp();
+
+    // 2. The function in which it is defined is not the caller
+    // use static link to find the correct sp
+    // NOTE: The highest Static Link is the sp of tiger_main
+    // Find out the Frame in which the callee is defined
+    for (auto curr_level = level; level != fun_entry->level_->parent_;
+         curr_level = curr_level->parent_) {
+      st = curr_level->get_sp();
     }
+    args.emplace_back(st);
+
+    required_outgo_size += reg_manager->WordSize();
   }
 
   for (auto arg_exp : this->args_->GetList()) {
     tr::ValAndTy *arg_val_ty = arg_exp->Translate(venv, tenv, level, errormsg);
     args.emplace_back(arg_val_ty->val_);
+    required_outgo_size += reg_manager->WordSize();
   }
 
   llvm::Value *call = ir_builder->CreateCall(llvm_func, args);
+
+  /* Adjuest the frame outgo size: sl + params */
+  level->frame_->AllocOutgoSpace(required_outgo_size);
+
   return new tr::ValAndTy(call, fun_entry->result_);
 }
 
@@ -751,6 +766,10 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   if (!this->elsee_) {
     else_bb = next_bb;
   }
+
+  // FIXME: Add a branch to parent function.
+  ir_builder->SetInsertPoint(&func->getEntryBlock());
+  ir_builder->CreateBr(test_bb);
 
   // if_test:
   ir_builder->SetInsertPoint(test_bb);
