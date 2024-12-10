@@ -81,11 +81,11 @@ namespace tr {
 /**
   Returns the Stack Top (Frame Pointer) of the current level.
 */
-llvm::Value *Level::get_fp() {
+llvm::Value *Level::get_fp(llvm::Value *sp) {
   llvm::Value *frame_size = ir_builder->CreateLoad(ir_builder->getInt64Ty(),
                                                    frame_->framesize_global);
   // fp = sp + func_global_offset
-  llvm::Value *fp = ir_builder->CreateAdd(get_sp(), frame_size);
+  llvm::Value *fp = ir_builder->CreateAdd(sp, frame_size);
   return fp;
 }
 
@@ -361,7 +361,7 @@ void VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
 
   // 将初始化值储存到变量地址
   // NOTE: ToLLVM应该传入fp!!
-  llvm::Value *fp = level->get_fp();
+  llvm::Value *fp = level->get_fp(level->get_sp());
   llvm::Value *var_addr = access->access_->ToLLVMVal(fp); // i64 here
   llvm::Value *var_ptr = ir_builder->CreateIntToPtr(
       var_addr, llvm::PointerType::get(init_val_ty->ty_->GetLLVMType(), 0));
@@ -430,7 +430,7 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
     // ToLLVMVal 传入的参数是当前 Frame 的FramePointer
     llvm::Value *static_link_ptr = ir_builder->CreateIntToPtr(
-        static_link_access->ToLLVMVal(level->get_fp()),
+        static_link_access->ToLLVMVal(level->get_fp(sp)),
         llvm::PointerType::get(ir_builder->getInt64Ty(), 0));
 
     // Update sp
@@ -442,7 +442,8 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   /* Calculate the address of the variable */
   // NOTE: Offset 是针对 Frame Pointer 的
-  llvm::Value *var_addr = var_entry->access_->access_->ToLLVMVal(level->get_fp());
+  llvm::Value *var_addr =
+      var_entry->access_->access_->ToLLVMVal(level->get_fp(sp));
 
   /* Transfer the address to pointer */
   // %x_ptr = inttoptr i64 %x_addr to i32*
@@ -778,8 +779,6 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     else_bb = next_bb;
   }
 
-  // FIXME: Add a branch to parent function.
-  // ir_builder->SetInsertPoint(&func->getEntryBlock());
   ir_builder->CreateBr(test_bb);
 
   // if_test:
@@ -806,20 +805,26 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     llvm::Value *else_val = else_val_ty->val_;
     ir_builder->CreateBr(next_bb);
 
-    /* Next BB Content */
+    /* Following Instructions should be in next_bb */
     ir_builder->SetInsertPoint(next_bb);
-    // TODO: Use Phi to return the correct value
+
+    // Void
+    if (else_val_ty->ty_->IsSameType(type::VoidTy::Instance())) {
+      return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
+    }
+
+    // Non-Void, using phi
     llvm::PHINode *phi_node =
         ir_builder->CreatePHI(then_val_ty->ty_->GetLLVMType(), 2, "iftmp");
     phi_node->addIncoming(then_val, then_bb);
     phi_node->addIncoming(else_val, else_bb);
     return new tr::ValAndTy(phi_node, then_val_ty->ty_);
+  } else {
+    /* Following Instructions should be in next_bb */
+    ir_builder->SetInsertPoint(next_bb);
+
+    return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
   }
-
-  /* Following Instructions should be in next_bb */
-  ir_builder->SetInsertPoint(next_bb);
-
-  return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
 }
 
 tr::ValAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,

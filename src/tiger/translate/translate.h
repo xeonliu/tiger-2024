@@ -45,8 +45,9 @@ public:
   /* TODO: Put your lab5-part1 code here */
   /*
     Get Stack Top Pointer (Frame Pointer)
+    The frame's StackPointer Must First be calculated
   */
-  llvm::Value *get_fp(); 
+  llvm::Value *get_fp(llvm::Value *sp); 
 };
 
 class ProgTr {
