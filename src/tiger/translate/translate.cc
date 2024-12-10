@@ -13,6 +13,7 @@
 #include <llvm-14/llvm/IR/DataLayout.h>
 #include <llvm-14/llvm/IR/DerivedTypes.h>
 #include <llvm-14/llvm/IR/GlobalVariable.h>
+#include <llvm-14/llvm/IR/Instructions.h>
 #include <tiger/absyn/absyn.h>
 
 #include "tiger/env/env.h"
@@ -147,6 +148,8 @@ void ProgTr::Translate() {
       ir_builder->CreateLoad(ir_builder->getInt64Ty(), framesize_global);
   llvm::Value *new_sp =
       ir_builder->CreateSub(sp_arg, framesize_val, "tiger_main_sp");
+
+  func_stack.push(tiger_main_func);
 
   this->absyn_tree_->Translate(this->venv_.get(), this->tenv_.get(),
                                this->main_level_.get(), this->errormsg_.get());
@@ -725,12 +728,12 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   llvm::BasicBlock *then_bb =
       llvm::BasicBlock::Create(context, "if_then", func);
   llvm::BasicBlock *else_bb = nullptr;
-  llvm::BasicBlock *next_bb =
-      llvm::BasicBlock::Create(context, "if_next", func);
-
   if (this->elsee_) {
     else_bb = llvm::BasicBlock::Create(context, "if_else", func);
-  } else {
+  }
+  llvm::BasicBlock *next_bb =
+      llvm::BasicBlock::Create(context, "if_next", func);
+  if (!this->elsee_) {
     else_bb = next_bb;
   }
 
@@ -754,16 +757,20 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   if (this->elsee_) {
     ir_builder->SetInsertPoint(else_bb);
     tr::ValAndTy *else_val_ty = elsee_->Translate(venv, tenv, level, errormsg);
+    llvm::Value *else_val = else_val_ty->val_;
     ir_builder->CreateBr(next_bb);
+    ir_builder->SetInsertPoint(next_bb);
+    // TODO: Use Phi to return the correct value
+    llvm::PHINode *phi_node =
+        ir_builder->CreatePHI(then_val_ty->ty_->GetLLVMType(), 2, "iftmp");
+    phi_node->addIncoming(then_val, then_bb);
+    phi_node->addIncoming(else_val, else_bb);
+    return new tr::ValAndTy(phi_node, then_val_ty->ty_);
   }
 
   ir_builder->SetInsertPoint(next_bb);
 
-  // TODO: Use Phi to return the correct value
-
-  if (!this->elsee_) {
-    return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
-  }
+  return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
 }
 
 tr::ValAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -876,6 +883,7 @@ tr::ValAndTy *LetExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     dec->Translate(venv, tenv, level, errormsg);
   }
   // FIXME: Where does these expressions belong?
+  ir_builder->SetInsertPoint(&func_stack.top()->getEntryBlock());
   auto val_ty = this->body_->Translate(venv, tenv, level, errormsg);
   venv->EndScope();
   return val_ty;
