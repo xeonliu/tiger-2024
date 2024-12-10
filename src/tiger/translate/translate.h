@@ -2,6 +2,7 @@
 #define TIGER_TRANSLATE_TRANSLATE_H_
 
 #include <list>
+#include <llvm-14/llvm/IR/Value.h>
 #include <memory>
 
 #include "tiger/absyn/absyn.h"
@@ -42,6 +43,10 @@ public:
   void set_sp(llvm::Value *sp) { frame_->sp = sp; }
 
   /* TODO: Put your lab5-part1 code here */
+  /*
+    Get Stack Top Pointer (Frame Pointer)
+  */
+  llvm::Value *get_fp(); 
 };
 
 class ProgTr {

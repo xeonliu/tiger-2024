@@ -74,6 +74,7 @@ public:
   /* TODO: Put your lab5-part1 code here */
 
   virtual ~Access() = default;
+  /* Base addr is frame pointer (stack top) */
   virtual llvm::Value *ToLLVMVal(llvm::Value *fp) const = 0;
 };
 

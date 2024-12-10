@@ -78,6 +78,17 @@ int getActualFramesize(tr::Level *level) {
 
 namespace tr {
 
+/**
+  Returns the Stack Top (Frame Pointer) of the current level.
+*/
+llvm::Value *Level::get_fp() {
+  llvm::Value *frame_size = ir_builder->CreateLoad(ir_builder->getInt64Ty(),
+                                                   frame_->framesize_global);
+  // fp = sp + func_global_offset
+  llvm::Value *fp = ir_builder->CreateAdd(get_sp(), frame_size);
+  return fp;
+}
+
 Access *Access::AllocLocal(Level *level, bool escape) {
   return new Access(level, level->frame_->AllocLocal(escape));
 }
@@ -134,6 +145,9 @@ void ProgTr::Translate() {
       llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantInt::get(ir_builder->getInt64Ty(), 0),
       "tigermain_framesize_global");
+
+  // Init FrameSizeGlobal
+  main_level_->frame_->framesize_global = framesize_global;
 
   // tiger_main:
   llvm::BasicBlock *entry_bb = llvm::BasicBlock::Create(
@@ -342,13 +356,15 @@ void VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
   tr::ValAndTy *init_val_ty =
       this->init_->Translate(venv, tenv, level, errormsg);
 
-  // 为变量分配空间？调用AllocLocal即可
+  // 在当前Level为变量分配空间
   tr::Access *access = tr::Access::AllocLocal(level, true); // 变量默认逃逸
-  auto sp = access->level_->get_sp();
+
   // 将初始化值储存到变量地址
-  llvm::Value *var_addr = access->access_->ToLLVMVal(sp); // i64 here
-  llvm::Value *var_ptr =
-      ir_builder->CreateIntToPtr(var_addr, init_val_ty->ty_->GetLLVMType());
+  // NOTE: ToLLVM应该传入fp!!
+  llvm::Value *fp = level->get_fp();
+  llvm::Value *var_addr = access->access_->ToLLVMVal(fp); // i64 here
+  llvm::Value *var_ptr = ir_builder->CreateIntToPtr(
+      var_addr, llvm::PointerType::get(init_val_ty->ty_->GetLLVMType(), 0));
 
   ir_builder->CreateStore(init_val_ty->val_, var_ptr);
 
@@ -409,13 +425,15 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   /** If `access` is not in `level` */
   while (level != var_entry->access_->level_) {
     /** Use Static Link */
-    // The first accessible frame-offset_ values is the static link
-    auto static_link_formal = level->frame_->Formals()->front();
-    // 读出Static Link 储存的地址
-    llvm::Value *static_link_ptr = ir_builder->CreateIntToPtr(
-        static_link_formal->ToLLVMVal(sp),
-        ir_builder->getInt64Ty()->getPointerElementType());
+    // 读出Static Link 储存的地址（父Frame函数的Stack Pointer）
+    auto static_link_access = level->frame_->Formals()->front();
 
+    // ToLLVMVal 传入的参数是当前 Frame 的FramePointer
+    llvm::Value *static_link_ptr = ir_builder->CreateIntToPtr(
+        static_link_access->ToLLVMVal(level->get_fp()),
+        llvm::PointerType::get(ir_builder->getInt64Ty(), 0));
+
+    // Update sp
     sp = ir_builder->CreateLoad(ir_builder->getInt64Ty(), static_link_ptr);
     level = level->parent_;
   }
@@ -423,15 +441,8 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   /** If `access` is in `level`? 主要的是 sp 处于正确的位置 */
 
   /* Calculate the address of the variable */
-
-  // Calculate Frame Pointer
-  llvm::Value *frame_size = ir_builder->CreateLoad(
-      ir_builder->getInt64Ty(), level->frame_->framesize_global);
-
-  // fp = sp + func_global_offset
-  llvm::Value *fp = ir_builder->CreateAdd(sp, frame_size);
   // NOTE: Offset 是针对 Frame Pointer 的
-  llvm::Value *var_addr = var_entry->access_->access_->ToLLVMVal(fp);
+  llvm::Value *var_addr = var_entry->access_->access_->ToLLVMVal(level->get_fp());
 
   /* Transfer the address to pointer */
   // %x_ptr = inttoptr i64 %x_addr to i32*
@@ -768,7 +779,7 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   }
 
   // FIXME: Add a branch to parent function.
-  ir_builder->SetInsertPoint(&func->getEntryBlock());
+  // ir_builder->SetInsertPoint(&func->getEntryBlock());
   ir_builder->CreateBr(test_bb);
 
   // if_test:
@@ -785,6 +796,7 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   tr::ValAndTy *then_val_ty =
       this->then_->Translate(venv, tenv, level, errormsg);
   llvm::Value *then_val = then_val_ty->val_;
+
   ir_builder->CreateBr(next_bb);
 
   // if_else:
@@ -793,6 +805,8 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     tr::ValAndTy *else_val_ty = elsee_->Translate(venv, tenv, level, errormsg);
     llvm::Value *else_val = else_val_ty->val_;
     ir_builder->CreateBr(next_bb);
+
+    /* Next BB Content */
     ir_builder->SetInsertPoint(next_bb);
     // TODO: Use Phi to return the correct value
     llvm::PHINode *phi_node =
@@ -802,6 +816,7 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     return new tr::ValAndTy(phi_node, then_val_ty->ty_);
   }
 
+  /* Following Instructions should be in next_bb */
   ir_builder->SetInsertPoint(next_bb);
 
   return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
@@ -816,9 +831,12 @@ tr::ValAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   llvm::LLVMContext &context = ir_module->getContext();
 
-  llvm::BasicBlock *testBB = llvm::BasicBlock::Create(context, "test", func);
-  llvm::BasicBlock *bodyBB = llvm::BasicBlock::Create(context, "body", func);
-  llvm::BasicBlock *doneBB = llvm::BasicBlock::Create(context, "done", func);
+  llvm::BasicBlock *testBB =
+      llvm::BasicBlock::Create(context, "while_test", func);
+  llvm::BasicBlock *bodyBB =
+      llvm::BasicBlock::Create(context, "while_body", func);
+  llvm::BasicBlock *doneBB =
+      llvm::BasicBlock::Create(context, "while_next", func);
 
   ir_builder->CreateBr(testBB);
   ir_builder->SetInsertPoint(testBB);
