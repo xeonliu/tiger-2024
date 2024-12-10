@@ -372,6 +372,71 @@ test_lab6() {
 
   if [[ $full_score == 0 ]]; then
     echo "${score_str}: ${score}"
+    exit 1
+  else
+    echo "[^_^]: Pass"
+    echo "${score_str}: 100"
+  fi
+}
+
+test_lab6_llref() {
+  local score_str="LAB6 SCORE"
+  local testcase_dir=${WORKDIR}/testdata/lab5or6/testcases
+  local ref_dir=${WORKDIR}/testdata/lab5or6/refs
+  local mergecase_dir=$testcase_dir/merge
+  local mergeref_dir=$ref_dir/merge
+  local runtime_path=${WORKDIR}/src/tiger/runtime/runtime.c
+  local score=0
+  local full_score=1
+  local testcase_name
+  local mergecase_name
+  local llvm_ref_dir=${WORKDIR}/testdata/lab5or6/llvm-refs
+
+  build tiger-compiler
+  for llvm_ir in "$llvm_ref_dir"/*.ll; do
+    testcase_name=$(basename "$llvm_ir" | cut -f1 -d".")
+    local ref=${ref_dir}/${testcase_name}.out
+    local assem=$llvm_ref_dir/$testcase_name.tig.s
+
+    ./tiger-compiler "$llvm_ir" &>/dev/null
+    gcc -Wl,--wrap,getchar -m64 "$assem" "$runtime_path" -o test.out &>/dev/null
+    if [ ! -s test.out ]; then
+      echo "Error: Link error [$testcase_name]"
+      full_score=0
+      continue
+    fi
+
+    if [[ $testcase_name == "merge" ]]; then
+      for mergecase in "$mergecase_dir"/*.in; do
+        mergecase_name=$(basename "$mergecase" | cut -f1 -d".")
+        local mergeref=${mergeref_dir}/${mergecase_name}.out
+        ./test.out <"$mergecase" >&/tmp/output.txt
+        diff -w -B /tmp/output.txt "$mergeref"
+        if [[ $? != 0 ]]; then
+          echo "Error: Output mismatch [$testcase_name/$mergecase_name]"
+          full_score=0
+          continue
+        fi
+        score=$((score + 5))
+        echo "Pass $testcase_name/$mergecase_name"
+      done
+    else
+      ./test.out >&/tmp/output.txt
+      diff -w -B /tmp/output.txt "$ref"
+      if [[ $? != 0 ]]; then
+        echo "Error: Output mismatch [$testcase_name]"
+        full_score=0
+        continue
+      fi
+      echo "Pass $testcase_name"
+      score=$((score + 5))
+    fi
+  done
+  rm -f "$testcase_dir"/*.tig.s
+
+  if [[ $full_score == 0 ]]; then
+    echo "${score_str}: ${score}"
+    exit 1
   else
     echo "[^_^]: Pass"
     echo "${score_str}: 100"
@@ -415,6 +480,9 @@ main() {
   elif [[ $scope == "lab6" ]]; then
     echo "========== Lab6 Test =========="
     test_lab6
+  elif [[ $scope == "lab6-llref" ]]; then
+    echo "========== Lab6 Test =========="
+    test_lab6_llref
   elif [[ $scope == "all" ]]; then
     echo "========== Lab1 Test =========="
     test_lab1

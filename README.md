@@ -39,7 +39,7 @@ We provide you a Docker image that has already installed all the dependencies. Y
 
 ## Compiling and Debugging
 
-There are five makeable targets in total, including `test_slp`, `test_lex`, `test_parse`, `test_semant`,  and `test_translate_llvm`.
+There are five makeable targets in total, including `test_slp`, `test_lex`, `test_parse`, `test_semant`, `test_translate_llvm`, `test_codegen` and `tiger-compiler`.
 
 1. Run container environment and attach to it, here is a simple example:
 
@@ -73,7 +73,6 @@ Use `make`
 ```bash
 make gradelabx
 ```
-
 
 You can test all the labs by
 ```bash

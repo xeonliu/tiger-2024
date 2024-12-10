@@ -2,7 +2,10 @@
 #include <iostream>
 namespace fg {
 
-void FlowGraphFactory::AssemFlowGraph() {}
+void FlowGraphFactory::AssemFlowGraph() {
+  /* TODO: Put your lab6 code here */
+
+}
 
 } // namespace fg
 

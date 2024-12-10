@@ -47,3 +47,17 @@ test_lab5:
   stage: test
   script:
     - make gradelab5
+test_lab6:
+  image: ipadsse302/tigerlabs_env:2.0.0
+  tags:
+    - r743
+  stage: test
+  script:
+    - make gradelab6
+test_lab6_llref:
+  image: ipadsse302/tigerlabs_env:2.0.0
+  tags:
+    - r743
+  stage: test
+  script:
+    - make gradelab6-llref

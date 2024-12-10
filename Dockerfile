@@ -8,7 +8,7 @@ RUN apt install -y sudo git cmake g++ gcc vim tar gdb flexc++ bisonc++ openssh-s
 RUN pip3 install graphviz
 RUN useradd -ms /bin/bash -G sudo stu
 RUN passwd -d stu
-RUN ln -sf /usr/bin/clang-format-10 /usr/bin/clang-format
+RUN ln -sf /usr/bin/clang-format-14 /usr/bin/clang-format
 
 USER stu
 WORKDIR /home/stu

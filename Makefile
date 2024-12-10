@@ -65,6 +65,9 @@ gradelab5:transform
 gradelab6:transform
 	bash scripts/grade.sh lab6
 
+gradelab6-llref:transform
+	bash scripts/grade.sh lab6-llref
+
 gradeall:transform
 	bash scripts/grade.sh all
 
