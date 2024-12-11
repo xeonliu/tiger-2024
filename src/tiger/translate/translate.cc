@@ -405,8 +405,17 @@ void VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
   // NOTE: ToLLVM应该传入fp!!
   llvm::Value *fp = level->get_fp(level->get_sp());
   llvm::Value *var_addr = access->access_->ToLLVMVal(fp); // i64 here
-  llvm::Value *var_ptr = ir_builder->CreateIntToPtr(
-      var_addr, llvm::PointerType::get(init_val_ty->ty_->GetLLVMType(), 0));
+
+  llvm::Type *var_ptr_type = nullptr;
+  // Int Type: i32*
+  if (init_val_ty->ty_->IsSameType(type::IntTy::Instance())) {
+    var_ptr_type = llvm::PointerType::get(init_val_ty->ty_->GetLLVMType(), 0);
+  } else {
+    // FIXME: For Record Type. Store in i64*
+    var_ptr_type = llvm::PointerType::get(ir_builder->getInt64Ty(), 0);
+  }
+
+  llvm::Value *var_ptr = ir_builder->CreateIntToPtr(var_addr, var_ptr_type);
 
   ir_builder->CreateStore(init_val_ty->val_, var_ptr);
 
@@ -459,7 +468,7 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   /* Get Stack Pointer of the function in which this variable is defined*/
   llvm::Value *sp = level->gen_sp(var_entry->access_->level_);
-  
+
   /* Calculate the address of the variable */
   // NOTE: Offset 是针对 Frame Pointer 的
   llvm::Value *var_addr =
@@ -481,10 +490,23 @@ tr::ValAndTy *FieldVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level,
                                   err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5-part1 code here */
-  // Pointer to the record
+  // NOTE: Already of ptr type!
   tr::ValAndTy *var_val = this->var_->Translate(venv, tenv, level, errormsg);
+
   // Semantic Analysis Ensure its type is RecordTy
+
+  // %MyStruct*
   type::RecordTy *record_ty = dynamic_cast<type::RecordTy *>(var_val->ty_);
+  llvm::Type *llvm_record_ptr_type = record_ty->GetLLVMType();
+  // %MyStruct
+  llvm::Type *llvm_record_type = llvm_record_ptr_type->getPointerElementType();
+
+  // %MyStruct** (Pointer to record_ty)
+  llvm::Value *var_addr = var_val->val_;
+
+  // Load the address of the record (MyStruct*) from record_ptr.
+  llvm::Value *record_ptr =
+      ir_builder->CreateLoad(llvm_record_ptr_type, var_addr);
 
   // How do I access its members?
   // 1. Get the field list
@@ -503,8 +525,9 @@ tr::ValAndTy *FieldVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   // Create GEP
   // %field_ptr = getelementptr (record_type), i64* %record_ptr, i32 0, i32
   // index
+  // %16 = getelementptr %MyStruct, %MyStruct* %15, i32 0, i32 0
   llvm::Value *field_ptr = ir_builder->CreateGEP(
-      record_ty->GetLLVMType()->getPointerElementType(), var_val->val_,
+      llvm_record_type, record_ptr,
       {ir_builder->getInt32(0), ir_builder->getInt32(index)},
       this->sym_->Name().c_str());
 
@@ -693,17 +716,21 @@ tr::ValAndTy *RecordExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   auto record_type = dynamic_cast<type::RecordTy *>(tenv->Look(this->typ_));
 
   // TODO: Craete a New Instance of RecordExp
-  // and return its address
-  // Get the size of record
-  llvm::Type *llvm_record_type = record_type->GetLLVMType();
+
+  /* As a Pointer to a struct */
+  llvm::Type *llvm_record_ptr_type = record_type->GetLLVMType();
+  llvm::Type *llvm_record_type = llvm_record_ptr_type->getPointerElementType();
+
   const llvm::DataLayout &data_layout = ir_module->getDataLayout();
+
   int record_size = data_layout.getTypeAllocSize(llvm_record_type);
-  llvm::Value *record_size_val = ir_builder->getInt32(record_size);
 
   // Allocate memory for the record
+  // Return Type is i64
   llvm::Value *record_addr =
-      ir_builder->CreateCall(alloc_record, {record_size_val});
-  // ir_builder->CreateAlloca(record_type->GetLLVMType(), nullptr);
+      ir_builder->CreateCall(alloc_record, {ir_builder->getInt32(record_size)});
+  llvm::Value *record_ptr =
+      ir_builder->CreateIntToPtr(record_addr, llvm_record_ptr_type);
 
   // Initialize each field
   int index = 0;
@@ -711,13 +738,13 @@ tr::ValAndTy *RecordExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     llvm::Value *field_val =
         field->exp_->Translate(venv, tenv, level, errormsg)->val_;
     llvm::Value *field_addr = ir_builder->CreateGEP(
-        record_type->GetLLVMType()->getPointerElementType(), record_addr,
+        llvm_record_type, record_ptr,
         {ir_builder->getInt32(0), ir_builder->getInt32(index)},
         field->name_->Name().c_str());
     ir_builder->CreateStore(field_val, field_addr);
     index++;
   }
-
+  // This is the address of the record in i64.
   return new tr::ValAndTy(record_addr, record_type);
 }
 

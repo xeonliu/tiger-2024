@@ -236,7 +236,7 @@ type::Ty *RecordExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     ++type_it;
   }
 
-  return tenv->Look(this->typ_)->ActualTy();
+  return record_type;
 }
 
 type::Ty *SeqExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -481,7 +481,8 @@ void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
   // If the type is not specified, the variable’s type comes from the
   // expression.
   if (this->typ_ == nullptr) {
-    if(exp_type->IsSameType(type::NilTy::Instance())) {
+    // NOTE: var := RecordExp
+    if(exp_type->ActualTy() == type::NilTy::Instance()) {
       errormsg->Error(this->pos_, "init should not be nil without type specified");
     }
     venv->Enter(this->var_, new env::VarEntry(exp_type));
