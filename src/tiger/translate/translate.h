@@ -47,7 +47,13 @@ public:
     Get Stack Top Pointer (Frame Pointer)
     The frame's StackPointer Must First be calculated
   */
-  llvm::Value *get_fp(llvm::Value *sp); 
+  llvm::Value *get_fp(llvm::Value *sp);
+  
+  /**
+    Generate sp at taget level trough static link
+    WARN: Make sure THIS level is accessable 
+   */ 
+  llvm::Value *gen_sp(tr::Level *target);
 };
 
 class ProgTr {

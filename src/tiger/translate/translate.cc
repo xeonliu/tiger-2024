@@ -91,6 +91,41 @@ llvm::Value *Level::get_fp(llvm::Value *sp) {
   return fp;
 }
 
+/**
+  Returns the Stack Pointer of a Target Level
+  Caller must make sure THIS Level's sp is accessable.
+
+  For CallExp Statck Link Arg
+  `this` refers the level of the caller
+  target refers to the Frame in which the callee is defined
+
+  For Simple Var
+  target refers to the Frame of the function in which the variable is defined
+  Needs fp for Variable Access.
+  追溯次数可以静态确定
+  然而取值过程需要生成汇编代码以动态执行
+ */
+llvm::Value *Level::gen_sp(tr::Level *target) {
+
+  // The Caller Should Make Sure this is accessable under current context.
+  llvm::Value *sp = this->get_sp();
+
+  for (tr::Level *level = this; level != target; level = level->parent_) {
+    auto st_access = level->frame_->Formals()->front();
+
+    // Address of the static link
+    // Address of the static link
+    llvm::Value *st_addr = st_access->ToLLVMVal(level->get_fp(sp));
+    llvm::Value *st_ptr = ir_builder->CreateIntToPtr(
+        st_addr, llvm::PointerType::get(ir_builder->getInt64Ty(), 0));
+
+    // Load the static link and Update sp
+    sp = ir_builder->CreateLoad(ir_builder->getInt64Ty(), st_ptr);
+  }
+
+  return sp;
+}
+
 Access *Access::AllocLocal(Level *level, bool escape) {
   return new Access(level, level->frame_->AllocLocal(escape));
 }
@@ -324,6 +359,7 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     // Store Static Link & others
     for (auto access : *(func_level->frame_->Formals())) {
       llvm::Value *arg = args++;
+      // NOTE: 这是一个优化，可以不从当前的sp进行复杂计算以取出fp
       // Call ToLLVMVal with the callee's runtime Stack Top (Frame Pointer)
       llvm::Value *arg_addr = access->ToLLVMVal(sp_arg);
       llvm::Value *arg_ptr = ir_builder->CreateIntToPtr(
@@ -419,37 +455,15 @@ tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   // Get the Type of the variable
   type::Ty *ty = var_entry->ty_->ActualTy();
 
-  /* Get Stack Pointer */
-  llvm::Value *sp = level->get_sp();
+  auto target_level = var_entry->access_->level_;
 
-  // TODO: 据说Level类可用于优雅地处理Static Link
-  /**
-    Find the Stack Pointer of the function in which this variable is defined!
-    追溯次数可以静态确定
-    然而取值过程需要生成汇编代码以动态执行
-   */
-  /** If `access` is not in `level` */
-  while (level != var_entry->access_->level_) {
-    /** Use Static Link */
-    // 读出Static Link 储存的地址（父Frame函数的Stack Pointer）
-    auto static_link_access = level->frame_->Formals()->front();
-
-    // ToLLVMVal 传入的参数是当前 Frame 的FramePointer
-    llvm::Value *static_link_ptr = ir_builder->CreateIntToPtr(
-        static_link_access->ToLLVMVal(level->get_fp(sp)),
-        llvm::PointerType::get(ir_builder->getInt64Ty(), 0));
-
-    // Update sp
-    sp = ir_builder->CreateLoad(ir_builder->getInt64Ty(), static_link_ptr);
-    level = level->parent_;
-  }
-
-  /** If `access` is in `level`? 主要的是 sp 处于正确的位置 */
-
+  /* Get Stack Pointer of the function in which this variable is defined*/
+  llvm::Value *sp = level->gen_sp(var_entry->access_->level_);
+  
   /* Calculate the address of the variable */
   // NOTE: Offset 是针对 Frame Pointer 的
   llvm::Value *var_addr =
-      var_entry->access_->access_->ToLLVMVal(level->get_fp(sp));
+      var_entry->access_->access_->ToLLVMVal(target_level->get_fp(sp));
 
   /* Transfer the address to pointer */
   // %x_ptr = inttoptr i64 %x_addr to i32*
@@ -588,16 +602,15 @@ tr::ValAndTy *CallExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
     // Static Link (The Stack Pointer of the function in which it is defined)
     // 1. Deafult: Caller's sp
-    auto st = level->get_sp();
-
     // 2. The function in which it is defined is not the caller
     // use static link to find the correct sp
     // NOTE: The highest Static Link is the sp of tiger_main
-    // Find out the Frame in which the callee is defined
-    for (auto curr_level = level; level != fun_entry->level_->parent_;
-         curr_level = curr_level->parent_) {
-      st = curr_level->get_sp();
-    }
+
+    // For CallExp, to obtain Statck Link Arg
+    // `this` refers the level of the caller
+    // target refers to the Frame in which the callee is defined
+    auto st = level->gen_sp(fun_entry->level_->parent_);
+
     args.emplace_back(st);
 
     required_outgo_size += reg_manager->WordSize();
