@@ -63,6 +63,15 @@ llvm::Function *string_equal;
 // LINK: in test_translate_llvm.cc
 std::vector<std::pair<std::string, frame::Frame *>> frame_info;
 
+/**
+  br label %if_test
+  br label %if_test4
+  有时翻译内部时产生br
+  退出时又产生br
+  两个br如果接着一个BB
+  llvm生成时会报错编号不对
+  因此需要此函数去除外部翻译时的br
+ */
 bool CheckBBTerminatorIsBranch(llvm::BasicBlock *bb) {
   auto inst = bb->getTerminator();
   if (inst) {
@@ -224,13 +233,11 @@ namespace absyn {
 tr::ValAndTy *AbsynTree::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level,
                                    err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   return this->root_->Translate(venv, tenv, level, errormsg);
 }
 
 void TypeDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
                         err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   for (auto tydec : this->types_->GetList()) {
     /* tydec -> type type-id = ty */
     tenv->Enter(tydec->name_, new type::NameTy(tydec->name_, nullptr));
@@ -241,8 +248,6 @@ void TypeDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
 
 void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                             tr::Level *level, err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
-
   /**
     Stage 1: For (Mutuallly) Recursive Functions
     Functions are globally defined.
@@ -325,8 +330,9 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     auto access_iter = accesses.begin();
     access_iter++; // The first one is static link.
 
+    // NOTE: access_iter must also advence here!
     for (auto field_iter = fields.begin(); field_iter != fields.end();
-         field_iter++) {
+         field_iter++, access_iter++) {
       tr::Access *tr_access = new tr::Access(func_entry->level_, *access_iter);
       env::VarEntry *var_entry =
           new env::VarEntry(tr_access, (*field_iter)->ty_);
@@ -394,7 +400,6 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
  */
 void VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
                        err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   tr::ValAndTy *init_val_ty =
       this->init_->Translate(venv, tenv, level, errormsg);
 
@@ -456,7 +461,6 @@ type::Ty *ArrayTy::Translate(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
 tr::ValAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level,
                                    err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   /* Fetch the entry */
   env::VarEntry *var_entry =
       dynamic_cast<env::VarEntry *>(venv->Look(this->sym_));
@@ -538,29 +542,37 @@ tr::ValAndTy *SubscriptVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                       tr::Level *level,
                                       err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5-part1 code here */
+  // i32** list_ptr (Pointer to array)
   tr::ValAndTy *var_val = this->var_->Translate(venv, tenv, level, errormsg);
+
+  // i32* llvm Type: Pointer to element.
   type::ArrayTy *array_ty = dynamic_cast<type::ArrayTy *>(var_val->ty_);
+  llvm::Type *llvm_array_type = array_ty->GetLLVMType();
+  // i32
+  llvm::Type *element_type = array_ty->ty_->GetLLVMType();
 
-  // Get the type of the subscript
-  type::Ty *subscript_ty = array_ty->ty_;
+  // Load the array_base_addr
+  // %33 = load i32*, i32** %tigermain_list_ptr, align 8
+  llvm::Value *base_addr =
+      ir_builder->CreateLoad(llvm_array_type, var_val->val_);
 
-  // How do I get the address of the subscript?
-  llvm::Value *base_addr = var_val->val_;
-
-  // Will it return an address or a value?
+  // it will return a value
   llvm::Value *subscript_val =
       this->subscript_->Translate(venv, tenv, level, errormsg)->val_;
 
-  return new tr::ValAndTy(subscript_val, subscript_ty);
+  // (i32*) %35 = getelementptr i32, i32* %33, i32 %34
+  llvm::Value *element_ptr =
+      ir_builder->CreateGEP(element_type, base_addr, subscript_val);
+
+  return new tr::ValAndTy(element_ptr, array_ty->ty_);
 }
 
 /**
-  TODO: 此处Var作为Exp使用，应该使用Load转换为右值后返回
+  NOTE: 此处Var作为Exp使用，应该使用Load转换为右值后返回
  */
 tr::ValAndTy *VarExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level,
                                 err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   tr::ValAndTy *var_val_ty = var_->Translate(venv, tenv, level, errormsg);
   llvm::Value *var_addr = var_val_ty->val_;
   type::Ty *var_type = var_val_ty->ty_;
@@ -804,8 +816,6 @@ tr::ValAndTy *AssignExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                tr::Level *level,
                                err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
-
   /* Get Parent Function */
   llvm::Function *func = ir_builder->GetInsertBlock()->getParent();
   llvm::LLVMContext &context = ir_module->getContext();
@@ -843,6 +853,7 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   llvm::Value *then_val = then_val_ty->val_;
 
   ir_builder->CreateBr(next_bb);
+  auto incoming_then_bb = ir_builder->GetInsertBlock();
 
   // if_else:
   if (this->elsee_) {
@@ -850,6 +861,8 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     tr::ValAndTy *else_val_ty = elsee_->Translate(venv, tenv, level, errormsg);
     llvm::Value *else_val = else_val_ty->val_;
     ir_builder->CreateBr(next_bb);
+    auto incoming_else_bb = ir_builder->GetInsertBlock();
+    // NOTE: Phi的时候就从这里来
 
     /* Following Instructions should be in next_bb */
     ir_builder->SetInsertPoint(next_bb);
@@ -862,8 +875,9 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     // Non-Void, using phi
     llvm::PHINode *phi_node =
         ir_builder->CreatePHI(then_val_ty->ty_->GetLLVMType(), 2, "iftmp");
-    phi_node->addIncoming(then_val, then_bb);
-    phi_node->addIncoming(else_val, else_bb);
+    /* NOTE: It is possible that its not branched from then and else... */
+    phi_node->addIncoming(then_val, incoming_then_bb);
+    phi_node->addIncoming(else_val, incoming_else_bb);
     return new tr::ValAndTy(phi_node, then_val_ty->ty_);
   } else {
     /* Following Instructions should be in next_bb */
@@ -876,7 +890,6 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 tr::ValAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level,
                                   err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   // What is this?
   llvm::Function *func = ir_builder->GetInsertBlock()->getParent();
 
@@ -982,7 +995,6 @@ tr::ValAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 tr::ValAndTy *BreakExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level,
                                   err::ErrorMsg *errormsg) const {
-  /* TODO: Put your lab5-part1 code here */
   auto afterBB = loop_stack.top();
   ir_builder->CreateBr(afterBB);
   return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
@@ -994,11 +1006,15 @@ tr::ValAndTy *LetExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   /* TODO: Put your lab5-part1 code here */
   auto decs = this->decs_->GetList();
   venv->BeginScope();
+  // Get the BB Here?
+  llvm::BasicBlock *currentBB = ir_builder->GetInsertBlock();
   for (auto dec : decs) {
     dec->Translate(venv, tenv, level, errormsg);
   }
-  // FIXME: Where does these expressions belong?
-  ir_builder->SetInsertPoint(&func_stack.top()->getEntryBlock());
+  // Restore the insert block here?
+  ir_builder->SetInsertPoint(currentBB);
+  // // FIXME: Where does these expressions belong?
+  // ir_builder->SetInsertPoint(&func_stack.top()->getEntryBlock());
   auto val_ty = this->body_->Translate(venv, tenv, level, errormsg);
   venv->EndScope();
   return val_ty;
@@ -1025,10 +1041,15 @@ tr::ValAndTy *ArrayExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   llvm::Value *init_val =
       this->init_->Translate(venv, tenv, level, errormsg)->val_;
 
+  // FIXME: init_val can be a Int32 or a Pointer of i64
+  // convert i32 init_val to i64?
+  llvm::Value *init_val_i64 =
+      ir_builder->CreateSExt(init_val, ir_builder->getInt64Ty());
+
   /* LINK: #C The C Functions */
   // Call an external initArray function
   llvm::Value *array_addr =
-      ir_builder->CreateCall(init_array, {len_val, init_val});
+      ir_builder->CreateCall(init_array, {len_val, init_val_i64});
 
   return new tr::ValAndTy(array_addr, array_ty);
 }
