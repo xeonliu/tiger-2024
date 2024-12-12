@@ -511,7 +511,8 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
 
     // For Mutually Recursive Declarations.
     // TODO： Send type_id into tenv with type::NameTy(tydec->name, nullptr)?
-    tenv->Enter(tydec->name_, new type::NameTy(tydec->name_, nullptr));
+    auto temp_ty = new type::NameTy(tydec->name_, nullptr);
+    tenv->Enter(tydec->name_, temp_ty);
 
     auto type = tydec->ty_->SemAnalyze(tenv, errormsg);
 
@@ -520,6 +521,8 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
       errormsg->Error(tydec->ty_->pos_, "illegal type cycle");
       break;
     }
+
+    temp_ty->ty_ = type;
 
     // Bind Name With Type
     tenv->Enter(tydec->name_, type);

@@ -177,6 +177,16 @@ void ProgTr::Translate() {
       llvm::Function::Create(alloc_record_type, llvm::Function::ExternalLinkage,
                              "alloc_record", ir_module);
 
+  // string_equal
+  llvm::FunctionType *string_equal_type =
+      llvm::FunctionType::get(ir_builder->getInt32Ty(),
+                              {type::StringTy::Instance()->GetLLVMType(),
+                               type::StringTy::Instance()->GetLLVMType()},
+                              false);
+  string_equal =
+      llvm::Function::Create(string_equal_type, llvm::Function::ExternalLinkage,
+                             "string_equal", ir_module);
+
   // tiger_main
   llvm::FunctionType *tiger_main_type = llvm::FunctionType::get(
       ir_builder->getInt32Ty(),
@@ -240,8 +250,10 @@ void TypeDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
                         err::ErrorMsg *errormsg) const {
   for (auto tydec : this->types_->GetList()) {
     /* tydec -> type type-id = ty */
-    tenv->Enter(tydec->name_, new type::NameTy(tydec->name_, nullptr));
+    auto temp_ty = new type::NameTy(tydec->name_, nullptr);
+    tenv->Enter(tydec->name_, new type::NameTy(tydec->name_, temp_ty));
     auto type = tydec->ty_->Translate(tenv, errormsg);
+    temp_ty->ty_ = type;
     tenv->Enter(tydec->name_, type);
   }
 }
@@ -381,6 +393,12 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     if (result_ty->IsSameType(type::VoidTy::Instance())) {
       ir_builder->CreateRetVoid();
     } else {
+      // /home/stu/tiger-compiler/testdata/lab5or6/testcases/merge.tig.ll:237:7:
+      // error: value doesn't match function result type 'i32' ret i1 %41
+      if (body_val_ty->val_->getType()->isIntegerTy(1)) {
+        body_val_ty->val_ =
+            ir_builder->CreateZExt(body_val_ty->val_, ir_builder->getInt32Ty());
+      }
       ir_builder->CreateRet(body_val_ty->val_);
     }
 
@@ -391,6 +409,8 @@ void FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
     framesize_global->setInitializer(
         llvm::ConstantInt::get(ir_builder->getInt64Ty(), framesize));
+    // Params Out of Scope!
+    venv->EndScope();
   }
 }
 
@@ -422,14 +442,26 @@ void VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv, tr::Level *level,
 
   llvm::Value *var_ptr = ir_builder->CreateIntToPtr(var_addr, var_ptr_type);
 
-  ir_builder->CreateStore(init_val_ty->val_, var_ptr);
+  if (init_val_ty->ty_->IsSameType(type::IntTy::Instance())) {
+    ir_builder->CreateStore(init_val_ty->val_, var_ptr);
+  } else {
+    // FIXME: For Record
+    // If the type is Record, convert to i64
+    llvm::Value *init_val_i64 =
+        ir_builder->CreatePtrToInt(init_val_ty->val_, ir_builder->getInt64Ty());
+    ir_builder->CreateStore(init_val_i64, var_ptr);
+  }
 
   venv->Enter(this->var_, new env::VarEntry(access, init_val_ty->ty_));
 }
 
 type::Ty *NameTy::Translate(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5-part1 code here */
-  return tenv->Look(this->name_);
+  auto type = tenv->Look(this->name_);
+  if (type == nullptr) {
+    type = new type::NameTy(this->name_, nullptr);
+  }
+  return type;
 }
 
 type::Ty *RecordTy::Translate(env::TEnvPtr tenv,
@@ -591,8 +623,8 @@ tr::ValAndTy *NilExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5-part1 code here */
-  // TODO: What should I return?
-  return new tr::ValAndTy(ir_builder->getInt64(0), type::NilTy::Instance());
+  // NOTE: What should I return? null.
+  return new tr::ValAndTy(nullptr, type::NilTy::Instance());
 }
 
 tr::ValAndTy *IntExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -673,6 +705,12 @@ tr::ValAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   auto left = this->left_->Translate(venv, tenv, level, errormsg);
   auto right = this->right_->Translate(venv, tenv, level, errormsg);
 
+  /*
+    Check the type of the left exp and right exp
+  */
+  auto left_ty = left->ty_;
+  auto right_ty = right->ty_;
+
   switch (oper) {
   case Oper::AND_OP:
     return new tr::ValAndTy(ir_builder->CreateAnd(left->val_, right->val_),
@@ -692,12 +730,44 @@ tr::ValAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   case Oper::DIVIDE_OP:
     return new tr::ValAndTy(ir_builder->CreateSDiv(left->val_, right->val_),
                             type::IntTy::Instance());
+  /*
+    The binary operators = and <> can compare any two operands of the same type.
+    Character Equality for string
+    Referencec Equality For Record and Array.
+  */
   case Oper::EQ_OP:
+    // String equality
+    if (left_ty->IsSameType(type::StringTy::Instance())) {
+      auto equality =
+          ir_builder->CreateCall(string_equal, {left->val_, right->val_});
+      return new tr::ValAndTy(equality, type::IntTy::Instance());
+    }
+    // Nil Equality
+    if (right_ty == type::NilTy::Instance()) {
+      return new tr::ValAndTy(ir_builder->CreateIsNull(left->val_),
+                              type::IntTy::Instance());
+    }
     return new tr::ValAndTy(ir_builder->CreateICmpEQ(left->val_, right->val_),
                             type::IntTy::Instance());
   case Oper::NEQ_OP:
+    // String Equality
+    if (left_ty->IsSameType(type::StringTy::Instance())) {
+      auto equality =
+          ir_builder->CreateCall(string_equal, {left->val_, right->val_});
+      return new tr::ValAndTy(ir_builder->CreateNot(equality),
+                              type::IntTy::Instance());
+    }
+    // NilEuqality
+    if (right_ty == type::NilTy::Instance()) {
+      return new tr::ValAndTy(ir_builder->CreateIsNotNull(left->val_),
+                              type::IntTy::Instance());
+    }
     return new tr::ValAndTy(ir_builder->CreateICmpNE(left->val_, right->val_),
                             type::IntTy::Instance());
+  /*
+    The binary operators >, <, >= and <=
+    interger / string
+  */
   case Oper::LT_OP:
     return new tr::ValAndTy(ir_builder->CreateICmpSLT(left->val_, right->val_),
                             type::IntTy::Instance());
@@ -756,8 +826,8 @@ tr::ValAndTy *RecordExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     ir_builder->CreateStore(field_val, field_addr);
     index++;
   }
-  // This is the address of the record in i64.
-  return new tr::ValAndTy(record_addr, record_type);
+  // This is the address of the record in %MyStruct.0*
+  return new tr::ValAndTy(record_ptr, record_type);
 }
 
 /**
@@ -842,6 +912,11 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   tr::ValAndTy *test_val_ty =
       this->test_->Translate(venv, tenv, level, errormsg);
   llvm::Value *test_val = test_val_ty->val_;
+  if (test_val->getType()->isIntegerTy() &&
+      test_val->getType()->getIntegerBitWidth() != 1) {
+    test_val = ir_builder->CreateICmpNE(
+        test_val, llvm::ConstantInt::get(test_val->getType(), 0), "cond");
+  }
 
   // br i1 %23, label %if_then, label %if_else
   ir_builder->CreateCondBr(test_val, then_bb, else_bb);
@@ -871,12 +946,18 @@ tr::ValAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     if (else_val_ty->ty_->IsSameType(type::VoidTy::Instance())) {
       return new tr::ValAndTy(nullptr, type::VoidTy::Instance());
     }
-
     // Non-Void, using phi
     llvm::PHINode *phi_node =
         ir_builder->CreatePHI(then_val_ty->ty_->GetLLVMType(), 2, "iftmp");
     /* NOTE: It is possible that its not branched from then and else... */
     phi_node->addIncoming(then_val, incoming_then_bb);
+
+    // FIXME: Nil type
+    if (else_val_ty->ty_ == type::NilTy::Instance()) {
+      else_val = llvm::ConstantPointerNull::get(
+          (llvm::PointerType *)then_val_ty->ty_->GetLLVMType());
+    }
+
     phi_node->addIncoming(else_val, incoming_else_bb);
     return new tr::ValAndTy(phi_node, then_val_ty->ty_);
   } else {
@@ -907,6 +988,16 @@ tr::ValAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   tr::ValAndTy *cond_val_ty = test_->Translate(venv, tenv, level, errormsg);
   llvm::Value *cond_val = cond_val_ty->val_;
+
+  // NOTE:
+  // /home/stu/tiger-compiler/testdata/lab5or6/testcases/merge.tig.ll:139:6:
+  // error: branch condition must have 'i1' type br i32 %34, label %while_body,
+  // label %while_next
+  if (cond_val->getType()->isIntegerTy() &&
+      cond_val->getType()->getIntegerBitWidth() != 1) {
+    cond_val = ir_builder->CreateICmpNE(
+        cond_val, llvm::ConstantInt::get(cond_val->getType(), 0), "cond");
+  }
 
   // Branch base on cond value
   ir_builder->CreateCondBr(cond_val, bodyBB, doneBB);
@@ -1010,11 +1101,11 @@ tr::ValAndTy *LetExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   llvm::BasicBlock *currentBB = ir_builder->GetInsertBlock();
   for (auto dec : decs) {
     dec->Translate(venv, tenv, level, errormsg);
+    // NOTE: dec also needs to be in the right insert point.
+    // Restore the insert block here?
+    ir_builder->SetInsertPoint(currentBB);
   }
-  // Restore the insert block here?
-  ir_builder->SetInsertPoint(currentBB);
-  // // FIXME: Where does these expressions belong?
-  // ir_builder->SetInsertPoint(&func_stack.top()->getEntryBlock());
+  
   auto val_ty = this->body_->Translate(venv, tenv, level, errormsg);
   venv->EndScope();
   return val_ty;
