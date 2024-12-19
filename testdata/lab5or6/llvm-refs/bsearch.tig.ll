@@ -88,20 +88,24 @@ init:
   %4 = add i64 %init_sp, %3
   %sl_ptr = inttoptr i64 %4 to i64*
   store i64 %1, i64* %sl_ptr, align 4
+  
   %5 = load i64, i64* @init_framesize_global, align 4
   %6 = add i64 %5, 8
   %7 = add i64 %init_sp, %6
   %8 = inttoptr i64 %7 to i64*
-  %9 = load i64, i64* %8, align 4
+  %9 = load i64, i64* %8, align 4 ; sl
+
   %10 = load i64, i64* @tigermain_framesize_global, align 4
   %11 = add i64 %10, -8
   %12 = add i64 %9, %11
+
   %tigermain_N_ptr = inttoptr i64 %12 to i32*
   %13 = load i32, i32* %tigermain_N_ptr, align 4
   %14 = sub i32 %13, 1
   %15 = load i64, i64* @init_framesize_global, align 4
   %16 = add i64 %15, -8
   %17 = add i64 %init_sp, %16
+
   %18 = inttoptr i64 %17 to i32*
   store i32 0, i32* %18, align 4
   br label %for_body
@@ -117,27 +121,33 @@ for_body:                                         ; preds = %for_incre, %init
   %22 = load i64, i64* @init_framesize_global, align 4
   %23 = add i64 %22, 8
   %24 = add i64 %init_sp, %23
+
   %25 = inttoptr i64 %24 to i64*
   %26 = load i64, i64* %25, align 4
   %27 = load i64, i64* @tigermain_framesize_global, align 4
   %28 = add i64 %27, -16
   %29 = add i64 %26, %28
   %tigermain_list_ptr = inttoptr i64 %29 to i32**
+
   %30 = load i64, i64* @init_framesize_global, align 4
   %31 = add i64 %30, -8
   %32 = add i64 %init_sp, %31
   %init_i_ptr = inttoptr i64 %32 to i32*
+  
   %33 = load i32*, i32** %tigermain_list_ptr, align 8
   %34 = load i32, i32* %init_i_ptr, align 4
   %35 = getelementptr i32, i32* %33, i32 %34
+  
   %36 = load i64, i64* @init_framesize_global, align 4
   %37 = add i64 %36, -8
   %38 = add i64 %init_sp, %37
   %init_i_ptr1 = inttoptr i64 %38 to i32*
+
   %39 = load i32, i32* %init_i_ptr1, align 4
   %40 = mul i32 %39, 2
   %41 = add i32 %40, 1
   store i32 %41, i32* %35, align 4
+
   %42 = load i64, i64* @init_framesize_global, align 4
   %43 = add i64 %42, 8
   %44 = add i64 %init_sp, %43
@@ -159,21 +169,25 @@ bsearch:
   %7 = add i64 %bsearch_sp, %6
   %sl_ptr = inttoptr i64 %7 to i64*
   store i64 %1, i64* %sl_ptr, align 4
+
   %8 = load i64, i64* @bsearch_framesize_global, align 4
   %9 = add i64 %8, 16
   %10 = add i64 %bsearch_sp, %9
   %11 = inttoptr i64 %10 to i32*
   store i32 %2, i32* %11, align 4
+
   %12 = load i64, i64* @bsearch_framesize_global, align 4
   %13 = add i64 %12, 24
   %14 = add i64 %bsearch_sp, %13
   %15 = inttoptr i64 %14 to i32*
   store i32 %3, i32* %15, align 4
+
   %16 = load i64, i64* @bsearch_framesize_global, align 4
   %17 = add i64 %16, 32
   %18 = add i64 %bsearch_sp, %17
   %19 = inttoptr i64 %18 to i32*
   store i32 %4, i32* %19, align 4
+
   br label %if_test
 
 if_test:                                          ; preds = %bsearch
@@ -181,10 +195,12 @@ if_test:                                          ; preds = %bsearch
   %21 = add i64 %20, 16
   %22 = add i64 %bsearch_sp, %21
   %bsearch_left_ptr = inttoptr i64 %22 to i32*
+
   %23 = load i64, i64* @bsearch_framesize_global, align 4
   %24 = add i64 %23, 24
   %25 = add i64 %bsearch_sp, %24
   %bsearch_right_ptr = inttoptr i64 %25 to i32*
+
   %26 = load i32, i32* %bsearch_left_ptr, align 4
   %27 = load i32, i32* %bsearch_right_ptr, align 4
   %28 = icmp eq i32 %26, %27
@@ -203,10 +219,12 @@ if_else:                                          ; preds = %if_test
   %34 = add i64 %33, 16
   %35 = add i64 %bsearch_sp, %34
   %bsearch_left_ptr2 = inttoptr i64 %35 to i32*
+  
   %36 = load i64, i64* @bsearch_framesize_global, align 4
   %37 = add i64 %36, 24
   %38 = add i64 %bsearch_sp, %37
   %bsearch_right_ptr3 = inttoptr i64 %38 to i32*
+  
   %39 = load i32, i32* %bsearch_left_ptr2, align 4
   %40 = load i32, i32* %bsearch_right_ptr3, align 4
   %41 = add i32 %39, %40
