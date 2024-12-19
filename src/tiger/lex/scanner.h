@@ -69,10 +69,12 @@ inline int Scanner::lex() { return lex_(); }
 
 inline void Scanner::preCode() {
   // Optionally replace by your own code
+  // std::cout << "WTF?" << std::endl;
 }
 
 inline void Scanner::postCode(PostEnum_ type) {
   // Optionally replace by your own code
+  // std::cout << type << std::endl;
 }
 
 inline void Scanner::print() { print_(); }

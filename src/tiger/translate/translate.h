@@ -2,6 +2,7 @@
 #define TIGER_TRANSLATE_TRANSLATE_H_
 
 #include <list>
+#include <llvm-14/llvm/IR/Value.h>
 #include <memory>
 
 #include "tiger/absyn/absyn.h"
@@ -26,6 +27,9 @@ public:
   static Access *AllocLocal(Level *level, bool escape);
 };
 
+/**
+  追踪不同函数之间level的相对关系，便于实现 Static Link
+ */
 class Level {
 public:
   frame::Frame *frame_;
@@ -39,6 +43,17 @@ public:
   void set_sp(llvm::Value *sp) { frame_->sp = sp; }
 
   /* TODO: Put your lab5-part1 code here */
+  /*
+    Get Stack Top Pointer (Frame Pointer)
+    The frame's StackPointer Must First be calculated
+  */
+  llvm::Value *get_fp(llvm::Value *sp);
+  
+  /**
+    Generate sp at taget level trough static link
+    WARN: Make sure THIS level is accessable 
+   */ 
+  llvm::Value *gen_sp(tr::Level *target);
 };
 
 class ProgTr {

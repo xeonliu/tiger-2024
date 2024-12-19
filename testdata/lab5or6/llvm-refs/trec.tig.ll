@@ -43,6 +43,7 @@ tigermain:
   store i32 3, i32* %5, align 4
   %6 = getelementptr %MyStruct, %MyStruct* %4, i32 0, i32 1
   store i32 4, i32* %6, align 4
+  
   %7 = ptrtoint %MyStruct* %4 to i64
   %8 = load i64, i64* @tigermain_framesize_global, align 4
   %9 = add i64 %8, -8

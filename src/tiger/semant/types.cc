@@ -16,6 +16,9 @@ Ty *Ty::ActualTy() { return this; }
 
 Ty *NameTy::ActualTy() {
   assert(ty_ != this);
+  if(ty_ == nullptr) {
+    return this;
+  }
   return ty_->ActualTy();
 }
 
@@ -23,6 +26,7 @@ bool Ty::IsSameType(Ty *expected) {
   Ty *a = ActualTy();
   Ty *b = expected->ActualTy();
 
+  // NOTE: This is because Record can be Nil.
   if ((typeid(*a) == typeid(NilTy) && typeid(*b) == typeid(RecordTy)) ||
       (typeid(*a) == typeid(RecordTy) && typeid(*b) == typeid(NilTy)))
     return true;
