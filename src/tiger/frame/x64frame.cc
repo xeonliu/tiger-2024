@@ -186,6 +186,15 @@ frame::Frame *NewFrame(temp::Label *name, std::list<bool> formals) {
 assem::InstrList *ProcEntryExit1(std::string_view function_name,
                                  assem::InstrList *body) {
   // TODO: your lab5 code here
+  /*
+   * Store instructions to save any **callee-saved registers**- including the
+   * return address register – used within the function
+   */
+
+  /*
+   * Load instructions to restore the **callee-save registers**
+   */
+  // 添加在InstrList之前
   return body;
 }
 
@@ -196,6 +205,7 @@ assem::InstrList *ProcEntryExit1(std::string_view function_name,
  * @return instructions with sink instruction
  */
 assem::InstrList *ProcEntryExit2(assem::InstrList *body) {
+  // 添加在InstrList之后
   body->Append(new assem::OperInstr("", new temp::TempList(),
                                     reg_manager->ReturnSink(), nullptr));
   return body;

@@ -21,7 +21,10 @@ class Traces;
 } // namespace canon
 
 namespace cg {
-
+/**!SECTION
+管理汇编指令列表
+提供方法将汇编指令列表打印到文件中
+ */
 class AssemInstr {
 public:
   AssemInstr() = delete;
@@ -34,7 +37,12 @@ public:
 private:
   assem::InstrList *instr_list_;
 };
-
+/*!SECTION
+将LLVM IR 转换为汇编指令
+管理LLVM IR 值到临时变量的映射
+记录基本快到索引的映射
+生成会变指令列表？
+*/
 class CodeGen {
 public:
   CodeGen(std::unique_ptr<canon::Traces> traces)
@@ -52,11 +60,13 @@ public:
   // function_name can be used to construct return or exit label
   void InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
                 std::string_view function_name, llvm::BasicBlock *bb);
+
   std::unique_ptr<AssemInstr> TransferAssemInstr() {
     return std::move(assem_instr_);
   }
 
 private:
+  // 记录LLVM IR值到临时变量的映射
   // record mapping from llvm value to temp
   std::unordered_map<llvm::Value *, temp::Temp *> *temp_map_;
   // for phi node, record mapping from llvm basic block to index of the block,
@@ -64,7 +74,9 @@ private:
   std::unordered_map<llvm::BasicBlock *, int> *bb_map_;
   // for phi node, use a temp to record which block it jumps from
   temp::Temp *phi_temp_;
+  // 储存函数的基本块和相关信息
   std::unique_ptr<canon::Traces> traces_;
+  // 储存生成的汇编指令
   std::unique_ptr<AssemInstr> assem_instr_;
 };
 

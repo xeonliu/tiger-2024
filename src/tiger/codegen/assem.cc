@@ -23,6 +23,13 @@ namespace assem {
  * First param is string created by this function by reading 'assem' string
  * and replacing `d `s and `j stuff.
  * Last param is function to use to determine what to do with each temp.
+ 这段代码用于格式化汇编指令字符串？？通过读取特殊标记`d` `s` `j`将他们替换为相应的寄存器名称或标签字符串。
+ 比如说输入assem为 "mov `d0, `s0"
+ dst 中 有 temp1
+ src 中 有 temp2
+ map 中 含有临时变量 temp1 到 "%eax" 字符串的映射
+ 可以转换为"mov %eax, %ebx"
+ Lab5-part2 似乎还不需要这样分配？
  * @param assem assembly string
  * @param dst dst_ temp
  * @param src src temp
@@ -38,12 +45,14 @@ static std::string Format(std::string_view assem, temp::TempList *dst,
     if (ch == '`') {
       i++;
       switch (assem.at(i)) {
+      // TODO: s代表源寄存器？ 
       case 's': {
         i++;
         int n = assem.at(i) - '0';
         std::string *s = m->Look(src->NthTemp(n));
         result += *s;
       } break;
+      // d 代表目标寄存器？
       case 'd': {
         i++;
         int n = assem.at(i) - '0';
@@ -53,6 +62,7 @@ static std::string Format(std::string_view assem, temp::TempList *dst,
         }
         result += *s;
       } break;
+      // j 代表跳转目标？？
       case 'j': {
         i++;
         assert(jumps);

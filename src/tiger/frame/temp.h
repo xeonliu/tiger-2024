@@ -1,6 +1,7 @@
 /**
   这些类和函数主要用于管理编译过程中生成的临时变量（Temp）和标签（Label）。
   这些临时变量和标签在编译器的中间表示（IR）中起着重要作用，用于标识和管理中间代码中的变量和跳转目标。
+  这些代码应该是供Lab5 Part 2 使用的
  */
 
 #ifndef TIGER_FRAME_TEMP_H_
@@ -38,6 +39,8 @@ private:
 
 /**
   用于生成和管理临时变量
+ * Temporarily store registers
+ * (assume we have infinite registers)
  */
 class TempFactory {
 public:
@@ -51,6 +54,18 @@ private:
 
 /**
   用于管理临时变量到字符串的映射
+ * A `temp::Map` is just a table
+ * whose keys are `temp::Temp*
+ * whose bindings are strings
+ *
+ * One mapping can be layered over another
+ *  When to use the temp::Map operations
+  + The register allocation
+  + Frame module makes it to describe the names of all the preallocated
+ registers
+    + Such as "%rsp" for SP, "%rax" for RV
+  + For debugging purpose
+    + Just maps each temporary to its name
  */
 class Map {
 public:
