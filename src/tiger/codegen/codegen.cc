@@ -214,7 +214,72 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     break;
   }
   case llvm::Instruction::Add:
-  case llvm::Instruction::Sub:
+  case llvm::Instruction::Sub: {
+    // Use addq, subq, leaq
+    llvm::Value *lhs = inst.getOperand(0);
+    llvm::Value *rhs = inst.getOperand(1);
+    llvm::Value *result = &inst;
+
+    // NOTE: 我们需要跳过使用（也即Parent Stack Pointer）%0
+    // 用于获取当前函数的栈指针的指令
+    // 比如 %tigermain_sp = sub i64 %0, %2
+
+    auto parent_sp =
+        static_cast<llvm::Value *>(traces_->GetBody()->arg_begin());
+    if (parent_sp == lhs) {
+      break;
+    }
+
+    temp::Temp *lhs_temp = temp_map_->at(lhs);
+    temp::Temp *result_temp = temp_map_->at(result);
+
+    // The rhs can be a constant int
+    temp::Temp *rhs_temp = nullptr;
+    auto it = temp_map_->find(rhs);
+    if (it != temp_map_->end()) {
+      rhs_temp = it->second;
+    }
+
+    if (rhs_temp) {
+      // %9 = add i64 %g_sp, %8
+      // 翻译为一条 addq 和一条 moveq 指令
+      // movq %rsp, t143
+      // addq t142, t143
+
+      // 1. movq lhs, result
+      instr_list->Append(new assem::MoveInstr("movq `s0, `d0",
+                                              new temp::TempList({result_temp}),
+                                              new temp::TempList({lhs_temp})));
+
+      // 2. addq/subq rhs, result
+      std::string assem =
+          opcode == llvm::Instruction::Add ? "addq `s0, `d0" : "subq `s0, `d0";
+      instr_list->Append(
+          new assem::OperInstr(assem, new temp::TempList({result_temp}),
+                               new temp::TempList({rhs_temp}), nullptr));
+    } else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+      // %5 = add i64 %4, 8
+      // 常数加法可以使用leaq实现
+      // leaq 8(%rsp), %rax
+
+      std::string assem;
+      if (opcode == llvm::Instruction::Add) {
+        assem =
+            "leaq " + std::to_string(const_int->getSExtValue()) + "(`s0), `d0";
+      } else {
+        assem =
+            "leaq " + std::to_string(-const_int->getSExtValue()) + "(`s0), `d0";
+      }
+      instr_list->Append(
+          new assem::OperInstr(assem, new temp::TempList({result_temp}),
+                               new temp::TempList({lhs_temp}), nullptr));
+    } else {
+      throw std::runtime_error("Unknown operand type");
+    }
+
+    break;
+  }
   case llvm::Instruction::Mul:
   case llvm::Instruction::SDiv: {
     // We only support following instructions now:
@@ -225,30 +290,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     llvm::Value *rhs = inst.getOperand(1);
     llvm::Value *result = &inst;
 
-    // NOTE: 我们需要跳过第一个参数（也即Parent Stack Pointer）%0的翻译
-    // 第一个减法指令 %tigermain_sp = sub i64 %0, %2
-    // 是用于获取当前函数的栈指针的
-    auto parent_sp =
-        static_cast<llvm::Value *>(traces_->GetBody()->arg_begin());
-    if (parent_sp == lhs) {
-      break;
-    }
-
+    // FIXME: Can lhs be a constant int?
     temp::Temp *lhs_temp = temp_map_->at(lhs);
     // NOTE: rhs can be a constant int
     temp::Temp *rhs_temp = nullptr;
     temp::Temp *result_temp = temp_map_->at(result);
 
     std::string assem;
-    if (opcode == llvm::Instruction::Add) {
-      assem = "add `d0, `s0, ";
-    } else if (opcode == llvm::Instruction::Sub) {
-      assem = "sub `d0, `s0, ";
-    } else if (opcode == llvm::Instruction::Mul) {
-      assem = "mul `d0, `s0, ";
-    } else if (opcode == llvm::Instruction::SDiv) {
-      assem = "div `d0, `s0, ";
-    }
 
     auto it = temp_map_->find(rhs);
     if (it != temp_map_->end()) {
@@ -256,18 +304,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     if (rhs_temp) {
-      // assem = "add `d0, `s0, `s1";
-      instr_list->Append(new assem::OperInstr(
-          assem + "`s1", new temp::TempList({result_temp}),
-          new temp::TempList({lhs_temp, rhs_temp}), nullptr));
     } else if (llvm::ConstantInt *const_int =
                    llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
-      // %5 = add i64 %4, 8
-      // assem = "add `d0, `s0, $1";
-      instr_list->Append(new assem::OperInstr(
-          assem + " $" + std::to_string(const_int->getSExtValue()),
-          new temp::TempList({result_temp}), new temp::TempList({lhs_temp}),
-          nullptr));
     } else {
       throw std::runtime_error("Unknown operand type");
     }
