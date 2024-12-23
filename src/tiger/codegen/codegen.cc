@@ -198,13 +198,14 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     // %2 = load i64, i64* @tigermain_framesize_global, align 4
     if (llvm::GlobalVariable *global_var =
             llvm::dyn_cast<llvm::GlobalVariable>(ptr)) {
-      std::string assem = "mov `d0, " + std::string(global_var->getName());
+      std::string assem =
+          "movq " + std::string(global_var->getName()) + "(%rip)" + ", `d0";
       instr_list->Append(new assem::OperInstr(
           assem, new temp::TempList(result_temp), nullptr, nullptr));
 
     } else {
       temp::Temp *ptr_temp = temp_map_->at(ptr);
-      std::string assem = "mov `d0, [`s0]";
+      std::string assem = "movq `s0, `d0";
       instr_list->Append(new assem::MoveInstr(assem,
                                               new temp::TempList(result_temp),
                                               new temp::TempList(ptr_temp)));
@@ -216,6 +217,10 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
   case llvm::Instruction::Sub:
   case llvm::Instruction::Mul:
   case llvm::Instruction::SDiv: {
+    // We only support following instructions now:
+    // movq, addq, subq, imulq, idivq, leaq, callq, cmpq, jmp, je, jne, jg, jge,
+    // jl, jle, retq, cqto, sete, setne, setg, setge, setl, setle
+
     llvm::Value *lhs = inst.getOperand(0);
     llvm::Value *rhs = inst.getOperand(1);
     llvm::Value *result = &inst;
