@@ -457,7 +457,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // Compare with 1 or 0
     instr_list->Append(new assem::OperInstr(
-        "cmp `s0, $1", new temp::TempList({cond_temp}), nullptr, nullptr));
+        "cmp `s0, $1", nullptr, new temp::TempList({cond_temp}), nullptr));
 
     // Jump to the corresponding label
     // FIXME: How do I get the targets?
