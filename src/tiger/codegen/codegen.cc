@@ -33,6 +33,7 @@ void CodeGen::Codegen() {
   // 将llvm::Value* 映射到临时变量
   temp_map_ = new std::unordered_map<llvm::Value *, temp::Temp *>();
   // 将Basic Block 映射到整数
+  // TODO: 是否是用于Branch指令？
   bb_map_ = new std::unordered_map<llvm::BasicBlock *, int>();
   // 初始化汇编指令列表，这也就是最终要生成的汇编代码
   auto *list = new assem::InstrList();
@@ -235,13 +236,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     std::string assem;
     if (opcode == llvm::Instruction::Add) {
-      assem = "add `d0, `s0, `s1";
+      assem = "add `d0, `s0, ";
     } else if (opcode == llvm::Instruction::Sub) {
-      assem = "sub `d0, `s0, `s1";
+      assem = "sub `d0, `s0, ";
     } else if (opcode == llvm::Instruction::Mul) {
-      assem = "mul `d0, `s0, `s1";
+      assem = "mul `d0, `s0, ";
     } else if (opcode == llvm::Instruction::SDiv) {
-      assem = "div `d0, `s0, `s1";
+      assem = "div `d0, `s0, ";
     }
 
     auto it = temp_map_->find(rhs);
@@ -250,11 +251,14 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     if (rhs_temp) {
+      // assem = "add `d0, `s0, `s1";
       instr_list->Append(new assem::OperInstr(
-          assem, new temp::TempList({result_temp}),
+          assem + "`s1", new temp::TempList({result_temp}),
           new temp::TempList({lhs_temp, rhs_temp}), nullptr));
     } else if (llvm::ConstantInt *const_int =
                    llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+      // %5 = add i64 %4, 8
+      // assem = "add `d0, `s0, $1";
       instr_list->Append(new assem::OperInstr(
           assem + " $" + std::to_string(const_int->getSExtValue()),
           new temp::TempList({result_temp}), new temp::TempList({lhs_temp}),
@@ -430,12 +434,20 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       throw std::runtime_error("Failed to cast to BranchInst");
     }
 
+    // FIXME: There are unconditional branches.
+    // br label %if_test
+    if (br_inst->isUnconditional()) {
+      llvm::BasicBlock *uncond_bb = br_inst->getSuccessor(0);
+      instr_list->Append(new assem::OperInstr(
+          "jmp " + std::string(uncond_bb->getName()), new temp::TempList(),
+          new temp::TempList(), nullptr));
+      break;
+    }
+
     // br i1 %20, label %if_then, label %if_else
 
     // Get the value of %20 (which is set in icmp instruction)
     // Compare with 1 or 0, and jump to the corresponding label
-
-    // FIXME: There are unconditional branches.
 
     llvm::Value *cond = br_inst->getCondition();
     llvm::BasicBlock *true_bb = br_inst->getSuccessor(0);
@@ -444,14 +456,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *cond_temp = temp_map_->at(cond);
 
     // Compare with 1 or 0
-    instr_list->Append(new assem::OperInstr("cmp `s0, $1",
-                                            new temp::TempList(cond_temp),
-                                            new temp::TempList(), nullptr));
+    instr_list->Append(new assem::OperInstr(
+        "cmp `s0, $1", new temp::TempList({cond_temp}), nullptr, nullptr));
 
     // Jump to the corresponding label
+    // FIXME: How do I get the targets?
     instr_list->Append(new assem::OperInstr(
-        "je " + std::string(true_bb->getName()), new temp::TempList(),
-        new temp::TempList(), nullptr));
+        "je " + std::string(true_bb->getName()), nullptr, nullptr, nullptr));
 
     break;
   }

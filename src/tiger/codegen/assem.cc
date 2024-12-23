@@ -30,6 +30,7 @@ namespace assem {
  map 中 含有临时变量 temp1 到 "%eax" 字符串的映射
  可以转换为"mov %eax, %ebx"
  Lab5-part2 似乎还不需要这样分配？
+ * Lab5-Part 2 中，这里是转换成 t131 t130 之类的临时变量。
  * @param assem assembly string
  * @param dst dst_ temp
  * @param src src temp
