@@ -169,6 +169,12 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     11. llvm::Instruction::Phi
   */
 
+  /**
+   We only support following instructions now:
+   movq, addq, subq, imulq, idivq, leaq, callq, cmpq, jmp, je, jne, jg, jge,
+   jl, jle, retq, cqto, sete, setne, setg, setge, setl, setle
+   */
+
   // 操纵对象以寄存器为主？不止
   llvm::errs() << "Generating code for instruction: ";
   inst.print(llvm::errs());
@@ -280,12 +286,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     break;
   }
-  case llvm::Instruction::Mul:
-  case llvm::Instruction::SDiv: {
-    // We only support following instructions now:
-    // movq, addq, subq, imulq, idivq, leaq, callq, cmpq, jmp, je, jne, jg, jge,
-    // jl, jle, retq, cqto, sete, setne, setg, setge, setl, setle
-
+  case llvm::Instruction::Mul: {
     llvm::Value *lhs = inst.getOperand(0);
     llvm::Value *rhs = inst.getOperand(1);
     llvm::Value *result = &inst;
@@ -296,7 +297,40 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *rhs_temp = nullptr;
     temp::Temp *result_temp = temp_map_->at(result);
 
-    std::string assem;
+    auto it = temp_map_->find(rhs);
+    if (it != temp_map_->end()) {
+      rhs_temp = it->second;
+    }
+
+    if (rhs_temp) {
+      // 使用 imulq 指令
+      // 三操作数形式
+      // imulq src1, src2, dst
+      std::string assem = "imulq `s0, `s1, `d0";
+      instr_list->Append(new assem::OperInstr(
+          assem, new temp::TempList({result_temp}),
+          new temp::TempList({lhs_temp, rhs_temp}), nullptr));
+    } else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+      std::string assem =
+          "imulq $" + std::to_string(const_int->getSExtValue()) + ", `s0, `d0";
+      instr_list->Append(
+          new assem::OperInstr(assem, new temp::TempList({result_temp}),
+                               new temp::TempList({lhs_temp}), nullptr));
+    } else {
+      throw std::runtime_error("Unknown operand type");
+    }
+
+    break;
+  }
+  case llvm::Instruction::SDiv: {
+    llvm::Value *lhs = inst.getOperand(0);
+    llvm::Value *rhs = inst.getOperand(1);
+    llvm::Value *result = &inst;
+
+    temp::Temp *lhs_temp = temp_map_->at(lhs);
+    temp::Temp *rhs_temp = nullptr;
+    temp::Temp *result_temp = temp_map_->at(result);
 
     auto it = temp_map_->find(rhs);
     if (it != temp_map_->end()) {
@@ -304,8 +338,17 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     if (rhs_temp) {
-    } else if (llvm::ConstantInt *const_int =
-                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+      // 使用 idivq 指令
+      // 需要将被除数放入 RAX 和 RDX 中
+      instr_list->Append(new assem::OperInstr(
+          "movq `s0, %rax", nullptr, new temp::TempList({lhs_temp}), nullptr));
+      instr_list->Append(new assem::OperInstr("cqto", nullptr, nullptr,
+                                              nullptr)); // 扩展 RAX 到 RDX:RAX
+      instr_list->Append(new assem::OperInstr(
+          "idivq `s0", nullptr, new temp::TempList({rhs_temp}), nullptr));
+      instr_list->Append(new assem::OperInstr("movq %rax, `d0",
+                                              new temp::TempList({result_temp}),
+                                              nullptr, nullptr));
     } else {
       throw std::runtime_error("Unknown operand type");
     }
