@@ -365,7 +365,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *src_temp = temp_map_->at(src);
     temp::Temp *result_temp = temp_map_->at(result);
 
-    std::string assem = "mov `d0, `s0";
+    std::string assem = "movq `s0, `d0";
     instr_list->Append(new assem::MoveInstr(assem,
                                             new temp::TempList({result_temp}),
                                             new temp::TempList({src_temp})));
@@ -381,7 +381,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *index_temp = temp_map_->at(index);
     temp::Temp *result_temp = temp_map_->at(result);
 
-    std::string assem = "lea `d0, [`s0 + `s1]";
+    std::string assem = "leaq (`s0, `s1), `d0";
     instr_list->Append(new assem::OperInstr(
         assem, new temp::TempList({result_temp}),
         new temp::TempList({ptr_temp, index_temp}), nullptr));
@@ -395,7 +395,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *value_temp = temp_map_->at(value);
     temp::Temp *ptr_temp = temp_map_->at(ptr);
 
-    std::string assem = "mov [`s1], `s0";
+    std::string assem = "movq `s0, (`s1)";
     instr_list->Append(new assem::MoveInstr(
         assem, nullptr, new temp::TempList({value_temp, ptr_temp})));
     break;
@@ -409,7 +409,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *src_temp = temp_map_->at(src);
     temp::Temp *result_temp = temp_map_->at(result);
 
-    std::string assem = "mov `d0, `s0";
+    std::string assem = "movq `s0, `d0";
     instr_list->Append(new assem::MoveInstr(assem,
                                             new temp::TempList({result_temp}),
                                             new temp::TempList({src_temp})));
@@ -483,7 +483,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     temp::Temp *result_temp = temp_map_->at(&inst);
     instr_list->Append(
-        new assem::OperInstr("movq `d0, `s0", new temp::TempList(result_temp),
+        new assem::OperInstr("movq `s0, `d0", new temp::TempList(result_temp),
                              new temp::TempList(reg_manager->GetRegister(
                                  frame::X64RegManager::Reg::RAX)),
                              nullptr));
@@ -506,7 +506,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // FIXME: Jump to the exit label
     instr_list->Append(
-        new assem::OperInstr("movq `d0, `s0",
+        new assem::OperInstr("movq `s0, `d0",
                              new temp::TempList(reg_manager->GetRegister(
                                  frame::X64RegManager::Reg::RAX)),
                              new temp::TempList(ret_val_temp), nullptr));
@@ -543,7 +543,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // Compare with 1 or 0
     instr_list->Append(new assem::OperInstr(
-        "cmp `s0, $1", nullptr, new temp::TempList({cond_temp}), nullptr));
+      "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
 
     // Jump to the corresponding label
     // FIXME: How do I get the targets?
@@ -597,6 +597,9 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     instr_list->Append(new assem::OperInstr(
+      "cmpq `s0, `s1", nullptr, new temp::TempList({lhs_temp, rhs_temp}), nullptr));
+
+    instr_list->Append(new assem::OperInstr(
         assem + " `d0", new temp::TempList({result_temp}),
         new temp::TempList({lhs_temp, rhs_temp}), nullptr));
 
@@ -620,8 +623,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *incoming_temp = temp_map_->at(incoming_val);
 
     instr_list->Append(
-        new assem::MoveInstr("movq `d0, `s0", new temp::TempList({result_temp}),
-                             new temp::TempList({incoming_temp})));
+      new assem::MoveInstr("movq `s0, `d0", new temp::TempList({result_temp}),
+                 new temp::TempList({incoming_temp})));
 
     break;
   }
