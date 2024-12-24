@@ -178,6 +178,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
   // 操纵对象以寄存器为主？不止
   llvm::errs() << "Generating code for instruction: ";
   inst.print(llvm::errs());
+  llvm::errs() << "\n";
 
   auto opcode = inst.getOpcode();
 
@@ -428,12 +429,19 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     /*
     * Skip the first %bsearch_sp parameter
-      Move all pass-by-stack values into stack
+      FIXME: Move all pass-by-stack values into stack
       Call the target function
       Get return value from %rax
     */
-    for (int i = 1; i < args.size(); i++) {
-      // FIXME: What about inst numbers?
+
+    for (int i = 0, r = 0; i < args.size(); i++, r++) {
+
+      if (i == 0 && IsRsp(args[i], function_name)) {
+        r--;
+        continue;
+      }
+
+      // NOTE: 对于C函数，不应该跳过第一个参数
       llvm::Value *arg = args[i];
       temp::Temp *arg_temp = nullptr;
 
@@ -449,27 +457,37 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       if (it != temp_map_->end()) {
         arg_temp = it->second;
       }
-      //  else {
-      //   arg_temp = temp::TempFactory::NewTemp();
-      //   temp_map_->insert({arg, arg_temp});
-      // }
+
+      if (IsRsp(arg, function_name)) {
+        arg_temp = reg_manager->GetRegister(frame::X64RegManager::Reg::RSP);
+      }
+
+      // FIXME: 仅仅使用寄存器传参？
+      // NOTE: 使用Round标记当前应使用的寄存器
+      auto dst_temp = reg_manager->ArgRegs()->NthTemp(r);
 
       if (arg_temp) {
-        instr_list->Append(new assem::OperInstr(
-            "movq `s0, " + std::to_string(8 * i) + "(%rsp)",
-            new temp::TempList(arg_temp),
-            new temp::TempList({arg_temp, reg_manager->GetRegister(
-                                              frame::X64RegManager::Reg::RSP)}),
-            nullptr));
+        instr_list->Append(new assem::MoveInstr(
+            "movq `s0, `d0", new temp::TempList({dst_temp}),
+            new temp::TempList({arg_temp}))); // Move argument to register
+        // instr_list->Append(new assem::OperInstr(
+        //     "movq `s0, " + std::to_string(8 * i) + "(%rsp)",
+        //     new temp::TempList(arg_temp),
+        //     new temp::TempList({arg_temp, reg_manager->GetRegister(
+        //                                       frame::X64RegManager::Reg::RSP)}),
+        //     nullptr));
       } else if (llvm::ConstantInt *const_int =
                      llvm::dyn_cast<llvm::ConstantInt>(arg)) {
         instr_list->Append(new assem::OperInstr(
-            "movq $" + std::to_string(const_int->getSExtValue()) + ", " +
-                std::to_string(8 * i) + "(%rsp)",
-            new temp::TempList(),
-            new temp::TempList(
-                {reg_manager->GetRegister(frame::X64RegManager::Reg::RSP)}),
-            nullptr));
+            "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+            new temp::TempList(dst_temp), nullptr, nullptr));
+        // instr_list->Append(new assem::OperInstr(
+        //     "movq $" + std::to_string(const_int->getSExtValue()) + ", " +
+        //         std::to_string(8 * i) + "(%rsp)",
+        //     new temp::TempList(),
+        //     new temp::TempList(
+        //         {reg_manager->GetRegister(frame::X64RegManager::Reg::RSP)}),
+        //     nullptr));
       } else {
         throw std::runtime_error("Unknown argument type");
       }
@@ -483,7 +501,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     temp::Temp *result_temp = temp_map_->at(&inst);
     instr_list->Append(
-        new assem::OperInstr("movq `s0, `d0", new temp::TempList(result_temp),
+        new assem::OperInstr("movq `s0, `d0", new temp::TempList({result_temp}),
                              new temp::TempList(reg_manager->GetRegister(
                                  frame::X64RegManager::Reg::RAX)),
                              nullptr));
@@ -502,14 +520,37 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       throw std::runtime_error("Failed to cast to ReturnInst");
     }
 
-    temp::Temp *ret_val_temp = temp_map_->at(ret_inst);
+    // Check if RetInst has param
+    llvm::Value *ret_val = ret_inst->getReturnValue();
+    if (!ret_val) {
+      std::runtime_error("ReturnInst has no return value");
+    }
 
-    // FIXME: Jump to the exit label
+    // Check if the return value is a constant int
+    temp::Temp *ret_val_temp = nullptr;
+    auto it = temp_map_->find(ret_val);
+    if (it != temp_map_->end()) {
+      ret_val_temp = it->second;
+      // FIXME: Jump to the exit label
+      instr_list->Append(
+          new assem::OperInstr("movq `s0, `d0",
+                               new temp::TempList(reg_manager->GetRegister(
+                                   frame::X64RegManager::Reg::RAX)),
+                               new temp::TempList({ret_val_temp}), nullptr));
+
+    } else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(ret_val)) {
+      ret_val_temp = temp::TempFactory::NewTemp();
+      instr_list->Append(new assem::OperInstr(
+          "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+          new temp::TempList(
+              reg_manager->GetRegister(frame::X64RegManager::Reg::RAX)),
+          nullptr, nullptr));
+    }
+
     instr_list->Append(
-        new assem::OperInstr("movq `s0, `d0",
-                             new temp::TempList(reg_manager->GetRegister(
-                                 frame::X64RegManager::Reg::RAX)),
-                             new temp::TempList(ret_val_temp), nullptr));
+        new assem::OperInstr("jmp " + std::string(function_name) + "_exit",
+                             nullptr, nullptr, nullptr));
 
     break;
   }
@@ -543,7 +584,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // Compare with 1 or 0
     instr_list->Append(new assem::OperInstr(
-      "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
+        "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
 
     // Jump to the corresponding label
     // FIXME: How do I get the targets?
@@ -597,7 +638,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     instr_list->Append(new assem::OperInstr(
-      "cmpq `s0, `s1", nullptr, new temp::TempList({lhs_temp, rhs_temp}), nullptr));
+        "cmpq `s0, `s1", nullptr, new temp::TempList({lhs_temp, rhs_temp}),
+        nullptr));
 
     instr_list->Append(new assem::OperInstr(
         assem + " `d0", new temp::TempList({result_temp}),
@@ -623,8 +665,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *incoming_temp = temp_map_->at(incoming_val);
 
     instr_list->Append(
-      new assem::MoveInstr("movq `s0, `d0", new temp::TempList({result_temp}),
-                 new temp::TempList({incoming_temp})));
+        new assem::MoveInstr("movq `s0, `d0", new temp::TempList({result_temp}),
+                             new temp::TempList({incoming_temp})));
 
     break;
   }

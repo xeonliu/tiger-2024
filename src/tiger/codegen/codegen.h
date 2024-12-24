@@ -53,6 +53,12 @@ public:
   // check if the value is %sp in llvm
   bool IsRsp(llvm::Value *val, std::string_view function_name) const {
     // TODO: your lab5 code here
+
+    // Return true if val name == function_name_sp
+    if (val->getName().str() == std::string(function_name) + "_sp") {
+      return true;
+    }
+
     return false;
   }
 

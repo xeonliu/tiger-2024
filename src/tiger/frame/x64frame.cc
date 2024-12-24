@@ -1,6 +1,8 @@
 #include "tiger/frame/x64frame.h"
+#include "tiger/codegen/assem.h"
 #include "tiger/env/env.h"
 #include "tiger/frame/frame.h"
+#include "tiger/frame/temp.h"
 
 #include <iostream>
 #include <list>
@@ -186,14 +188,28 @@ frame::Frame *NewFrame(temp::Label *name, std::list<bool> formals) {
 assem::InstrList *ProcEntryExit1(std::string_view function_name,
                                  assem::InstrList *body) {
   // TODO: your lab5 code here
-  /*
-   * Store instructions to save any **callee-saved registers**- including the
-   * return address register – used within the function
-   */
 
-  /*
-   * Load instructions to restore the **callee-save registers**
-   */
+  body->Append(new assem::LabelInstr("tigermain_exit"));
+  
+  for (auto reg : reg_manager->CalleeSaves()->GetList()) {
+    // Create a new temp
+    auto temp = temp::TempFactory::NewTemp();
+    auto iter = body->GetList().begin();
+    /*
+     * 1. Store instructions to save any **callee-saved registers**- including
+     * the return address register – used within the function
+     */
+    body->Insert(
+        iter, new assem::OperInstr("movq `s0, `d0", new temp::TempList({temp}),
+                                   new temp::TempList({reg}), nullptr));
+    /*
+     * 2. Load instructions to restore the **callee-save registers**
+     */
+    body->Append(new assem::OperInstr("movq `s0, `d0",
+                                      new temp::TempList({reg}),
+                                      new temp::TempList({temp}), nullptr));
+  }
+
   // 添加在InstrList之前
   return body;
 }
@@ -223,6 +239,23 @@ assem::Proc *ProcEntryExit3(std::string_view function_name,
   std::string epilogue = "";
 
   // TODO: your lab5 code here
+  // 1. Pseudo-instructions to announce the beginning of a function;
+  // 2. A label definition of the function name
+  prologue += std::string(function_name) + std::string(":\n");
+  // 3. An instruction to adjust the stack pointer.
+  prologue +=
+      "movq " + std::string(function_name) + "_framesize_global(%rip), %rax\n";
+  prologue += "subq %rax, %rsp\n";
+
+  // 4. An instruction to reset the stack pointer (to deallocate the frame)
+  // FIXME: Why %rdi?
+  epilogue +=
+      "movq " + std::string(function_name) + "_framesize_global(%rip), %rdi\n";
+  epilogue += "addq %rdi, %rsp\n";
+  // 5. A return instruction (Jump to the return address)
+  epilogue += "retq\n";
+  // 6. Pseduo-instructions, as needed, to announce the end of a function
+
   return new assem::Proc(prologue, body, epilogue);
 }
 
