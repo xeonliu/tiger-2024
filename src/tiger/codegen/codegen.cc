@@ -237,22 +237,33 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       break;
     }
 
-    temp::Temp *lhs_temp = temp_map_->at(lhs);
-
-    if (IsRsp(lhs, function_name)) {
-      lhs_temp = reg_manager->GetRegister(frame::X64RegManager::Reg::RSP);
-    }
-
+    // lhs and rhs can be a constant int
+    temp::Temp *lhs_temp = nullptr;
+    temp::Temp *rhs_temp = nullptr;
     temp::Temp *result_temp = temp_map_->at(result);
 
-    // The rhs can be a constant int
-    temp::Temp *rhs_temp = nullptr;
-    auto it = temp_map_->find(rhs);
+    auto it = temp_map_->find(lhs);
+    if (it != temp_map_->end()) {
+      lhs_temp = it->second;
+    }
+
+    it = temp_map_->find(rhs);
     if (it != temp_map_->end()) {
       rhs_temp = it->second;
     }
 
-    if (rhs_temp) {
+    // lhs or rhs can be rsp
+    if (IsRsp(lhs, function_name)) {
+      lhs_temp = reg_manager->GetRegister(frame::X64RegManager::Reg::RSP);
+    }
+
+    if (IsRsp(rhs, function_name)) {
+      rhs_temp = reg_manager->GetRegister(frame::X64RegManager::Reg::RSP);
+    }
+
+    // If Both temp exists
+
+    if (lhs_temp && rhs_temp) {
       // %9 = add i64 %g_sp, %8
       // 翻译为一条 addq 和一条 moveq 指令
       // movq %rsp, t143
@@ -269,26 +280,43 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       instr_list->Append(
           new assem::OperInstr(assem, new temp::TempList({result_temp}),
                                new temp::TempList({rhs_temp}), nullptr));
-    } else if (llvm::ConstantInt *const_int =
-                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
-      // %5 = add i64 %4, 8
-      // 常数加法可以使用leaq实现
-      // leaq 8(%rsp), %rax
+      break;
+    }
 
-      std::string assem;
-      if (opcode == llvm::Instruction::Add) {
-        assem =
-            "leaq " + std::to_string(const_int->getSExtValue()) + "(`s0), `d0";
-      } else {
-        assem =
-            "leaq " + std::to_string(-const_int->getSExtValue()) + "(`s0), `d0";
-      }
-      instr_list->Append(
-          new assem::OperInstr(assem, new temp::TempList({result_temp}),
-                               new temp::TempList({lhs_temp}), nullptr));
+    // If there is at least one register
+    temp::Temp *reg = nullptr;
+    llvm::ConstantInt *const_int = nullptr;
+
+    // If lhs is a register
+    if (lhs_temp) {
+      // Check if rhs is a constant int
+      // %5 = add i64 %4, 8
+      reg = lhs_temp;
+      const_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+    } else if (rhs_temp) {
+      // Check if lhs is a constant int
+      // %16 = add i32 1, %15
+      reg = rhs_temp;
+      const_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
     } else {
       throw std::runtime_error("Unknown operand type");
     }
+
+    // 常数加法可以使用leaq实现
+    // leaq 8(%rsp), %rax
+
+    std::string assem;
+    if (opcode == llvm::Instruction::Add) {
+      assem =
+          "leaq " + std::to_string(const_int->getSExtValue()) + "(`s0), `d0";
+    } else {
+      assem =
+          "leaq " + std::to_string(-const_int->getSExtValue()) + "(`s0), `d0";
+    }
+
+    instr_list->Append(
+        new assem::OperInstr(assem, new temp::TempList({result_temp}),
+                             new temp::TempList({reg}), nullptr));
 
     break;
   }
@@ -684,8 +712,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     } else if (llvm::ConstantInt *const_int =
                    llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
       instr_list->Append(new assem::OperInstr(
-          "cmpq $" + std::to_string(const_int->getSExtValue()) + ", `s0", nullptr,
-          new temp::TempList({lhs_temp}), nullptr));
+          "cmpq $" + std::to_string(const_int->getSExtValue()) + ", `s0",
+          nullptr, new temp::TempList({lhs_temp}), nullptr));
     }
 
     instr_list->Append(new assem::OperInstr(
