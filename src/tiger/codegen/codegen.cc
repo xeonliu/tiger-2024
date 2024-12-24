@@ -212,7 +212,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     } else {
       temp::Temp *ptr_temp = temp_map_->at(ptr);
-      std::string assem = "movq `s0, `d0";
+      std::string assem = "movq (`s0), `d0";
       instr_list->Append(new assem::MoveInstr(assem,
                                               new temp::TempList(result_temp),
                                               new temp::TempList(ptr_temp)));
@@ -238,6 +238,11 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     temp::Temp *lhs_temp = temp_map_->at(lhs);
+    
+    if (IsRsp(lhs, function_name)) {
+      lhs_temp = reg_manager->GetRegister(frame::X64RegManager::Reg::RSP);
+    }
+
     temp::Temp *result_temp = temp_map_->at(result);
 
     // The rhs can be a constant int

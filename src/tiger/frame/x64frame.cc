@@ -189,8 +189,8 @@ assem::InstrList *ProcEntryExit1(std::string_view function_name,
                                  assem::InstrList *body) {
   // TODO: your lab5 code here
 
-  body->Append(new assem::LabelInstr("tigermain_exit"));
-  
+  body->Append(new assem::LabelInstr(std::string(function_name) + "_exit"));
+
   for (auto reg : reg_manager->CalleeSaves()->GetList()) {
     // Create a new temp
     auto temp = temp::TempFactory::NewTemp();
@@ -210,7 +210,6 @@ assem::InstrList *ProcEntryExit1(std::string_view function_name,
                                       new temp::TempList({temp}), nullptr));
   }
 
-  // 添加在InstrList之前
   return body;
 }
 
