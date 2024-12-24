@@ -416,7 +416,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
                    llvm::dyn_cast<llvm::ConstantInt>(value)) {
       value_temp = temp::TempFactory::NewTemp();
       instr_list->Append(new assem::OperInstr(
-          "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+          "movq $" + std::to_string(const_int->getSExtValue()) + ", (`d0)",
           new temp::TempList(ptr_temp), nullptr, nullptr));
     }
 
@@ -543,8 +543,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // Check if RetInst has param
     llvm::Value *ret_val = ret_inst->getReturnValue();
+
+    // NOTE: For ret void
     if (!ret_val) {
-      std::runtime_error("ReturnInst has no return value");
+      instr_list->Append(
+          new assem::OperInstr("jmp " + std::string(function_name) + "_exit",
+                               nullptr, nullptr, nullptr));
+      break;
     }
 
     // Check if the return value is a constant int
@@ -607,10 +612,18 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     instr_list->Append(new assem::OperInstr(
         "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
 
+    // // FIXME: Set E Here??
+    // instr_list->Append(
+    //     new assem::OperInstr("sete `d0", new temp::TempList(cond_temp),
+    //                          new temp::TempList({cond_temp}), nullptr));
+
     // Jump to the corresponding label
     // FIXME: How do I get the targets?
     instr_list->Append(new assem::OperInstr(
         "je " + std::string(true_bb->getName()), nullptr, nullptr, nullptr));
+
+    instr_list->Append(new assem::OperInstr(
+        "jmp " + std::string(false_bb->getName()), nullptr, nullptr, nullptr));
 
     break;
   }
@@ -631,7 +644,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     llvm::Value *result = &inst;
 
     temp::Temp *lhs_temp = temp_map_->at(lhs);
-    temp::Temp *rhs_temp = temp_map_->at(rhs);
+    // rhs can be constant int
+    temp::Temp *rhs_temp = nullptr;
+    auto it = temp_map_->find(rhs);
+    if (it != temp_map_->end()) {
+      rhs_temp = it->second;
+    }
+
     temp::Temp *result_temp = temp_map_->at(result);
 
     std::string assem;
@@ -658,9 +677,16 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       throw std::runtime_error("Unknown ICmp predicate");
     }
 
-    instr_list->Append(new assem::OperInstr(
-        "cmpq `s0, `s1", nullptr, new temp::TempList({lhs_temp, rhs_temp}),
-        nullptr));
+    if (rhs_temp) {
+      instr_list->Append(new assem::OperInstr(
+          "cmpq `s1, `s0", nullptr, new temp::TempList({lhs_temp, rhs_temp}),
+          nullptr));
+    } else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+      instr_list->Append(new assem::OperInstr(
+          "cmpq $" + std::to_string(const_int->getSExtValue()) + ", `s0", nullptr,
+          new temp::TempList({lhs_temp}), nullptr));
+    }
 
     instr_list->Append(new assem::OperInstr(
         assem + " `d0", new temp::TempList({result_temp}),
