@@ -238,7 +238,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     temp::Temp *lhs_temp = temp_map_->at(lhs);
-    
+
     if (IsRsp(lhs, function_name)) {
       lhs_temp = reg_manager->GetRegister(frame::X64RegManager::Reg::RSP);
     }
@@ -398,12 +398,28 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     llvm::Value *value = inst.getOperand(0);
     llvm::Value *ptr = inst.getOperand(1);
 
-    temp::Temp *value_temp = temp_map_->at(value);
+    // value can be constant int
+    temp::Temp *value_temp = nullptr;
     temp::Temp *ptr_temp = temp_map_->at(ptr);
 
-    std::string assem = "movq `s0, (`s1)";
-    instr_list->Append(new assem::MoveInstr(
-        assem, nullptr, new temp::TempList({value_temp, ptr_temp})));
+    auto it = temp_map_->find(value);
+    if (it != temp_map_->end()) {
+      value_temp = it->second;
+    }
+    // FIXME: What is source and what is destination?
+    if (value_temp) {
+      std::string assem = "movq `s0, (`d0)";
+      instr_list->Append(
+          new assem::MoveInstr(assem, new temp::TempList{ptr_temp},
+                               new temp::TempList({value_temp})));
+    } else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(value)) {
+      value_temp = temp::TempFactory::NewTemp();
+      instr_list->Append(new assem::OperInstr(
+          "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+          new temp::TempList(ptr_temp), nullptr, nullptr));
+    }
+
     break;
   }
   //   6. llvm::Instruction::BitCast/ZExt
