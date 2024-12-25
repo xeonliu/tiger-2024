@@ -407,21 +407,28 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       rhs_temp = it->second;
     }
 
+    // 使用 idivq 指令
+    // 需要将被除数放入 RAX 和 RDX 中
+    instr_list->Append(new assem::OperInstr(
+        "movq `s0, %rax", nullptr, new temp::TempList({lhs_temp}), nullptr));
+    instr_list->Append(new assem::OperInstr("cqto", nullptr, nullptr,
+                                            nullptr)); // 扩展 RAX 到 RDX:RAX
+
     if (rhs_temp) {
-      // 使用 idivq 指令
-      // 需要将被除数放入 RAX 和 RDX 中
+    } else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+      rhs_temp = temp::TempFactory::NewTemp();
       instr_list->Append(new assem::OperInstr(
-          "movq `s0, %rax", nullptr, new temp::TempList({lhs_temp}), nullptr));
-      instr_list->Append(new assem::OperInstr("cqto", nullptr, nullptr,
-                                              nullptr)); // 扩展 RAX 到 RDX:RAX
-      instr_list->Append(new assem::OperInstr(
-          "idivq `s0", nullptr, new temp::TempList({rhs_temp}), nullptr));
-      instr_list->Append(new assem::OperInstr("movq %rax, `d0",
-                                              new temp::TempList({result_temp}),
-                                              nullptr, nullptr));
+          "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+          new temp::TempList({rhs_temp}), nullptr, nullptr));
     } else {
       throw std::runtime_error("Unknown operand type");
     }
+
+    instr_list->Append(new assem::OperInstr(
+        "idivq `s0", nullptr, new temp::TempList({rhs_temp}), nullptr));
+    instr_list->Append(new assem::OperInstr(
+        "movq %rax, `d0", new temp::TempList({result_temp}), nullptr, nullptr));
 
     break;
   }
@@ -716,7 +723,6 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       throw std::runtime_error("Failed to cast to BranchInst");
     }
 
-    // FIXME: There are unconditional branches.
     // br label %if_test
     if (br_inst->isUnconditional()) {
       llvm::BasicBlock *uncond_bb = br_inst->getSuccessor(0);
@@ -748,14 +754,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     instr_list->Append(new assem::OperInstr(
         "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
 
-    // // FIXME: Set E Here??
-    // instr_list->Append(
-    //     new assem::OperInstr("sete `d0", new temp::TempList(cond_temp),
-    //                          new temp::TempList({cond_temp}), nullptr));
-
     // Jump to the corresponding label
-    // FIXME: How do I get the targets?
-
     // TODO: Before jump, move bb index to %rax?
     instr_list->Append(new assem::MoveInstr(
         "movq $" + std::to_string(bb_map_->at(br_inst->getParent())) + ", `d0",
