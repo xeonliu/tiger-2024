@@ -3,7 +3,10 @@
 
 #include "tiger/canon/canon.h"
 #include "tiger/codegen/assem.h"
+#include "tiger/frame/temp.h"
 #include "tiger/frame/x64frame.h"
+#include <cstdio>
+#include <llvm-14/llvm/IR/Value.h>
 
 // Forward Declarations
 namespace frame {
@@ -86,6 +89,39 @@ private:
   std::unique_ptr<canon::Traces> traces_;
   // 储存生成的汇编指令
   std::unique_ptr<AssemInstr> assem_instr_;
+
+  // 太愚蠢了，我不要为每个指令都写一对相同的的东西
+  /**
+   * @brief  Convert llvm::Value* params to $inst or `s0, `s1, ...
+   * @note
+   * @param  sources: A List of llvm::Value* sources.
+   * @retval
+   */
+  static std::vector<std::string>
+  convertToStrings(std::vector<llvm::Value *> sources) {
+    std::vector<std::string> result;
+    for (int i = 0; i < sources.size(); ++i) {
+      if (auto const_int = llvm::dyn_cast<llvm::ConstantInt>(sources[i])) {
+        result.push_back("$" + std::to_string(const_int->getSExtValue()));
+      } else {
+        result.push_back("`s" + std::to_string(i));
+      }
+    }
+    return result;
+  }
+
+  temp::TempList *convertToSrcTempList(std::vector<llvm::Value *> srcs) {
+    temp::TempList *src_temp_list = new temp::TempList();
+    for (auto src : srcs) {
+      auto it = temp_map_->find(src);
+      if (it != temp_map_->end()) {
+        src_temp_list->Append(it->second);
+      } else {
+        src_temp_list->Append(nullptr);
+      }
+    }
+    return src_temp_list;
+  }
 };
 
 } // namespace cg

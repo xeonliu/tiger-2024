@@ -442,19 +442,79 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     break;
   }
   case llvm::Instruction::GetElementPtr: {
-    // 处理 GetElementPtr 指令
-    llvm::Value *ptr = inst.getOperand(0);
-    llvm::Value *index = inst.getOperand(1);
-    llvm::Value *result = &inst;
+    // 处理 GetElementPtr 指令，GetElementPointer有三个参数
+    // 测试集中仅有三参数（其中第二个参数为0）的取Record
+    // 和两参数（两个均为寄存器）的取Array
+
+    // Convert to GetElement Ptr
+    llvm::GetElementPtrInst &gep_inst =
+        llvm::cast<llvm::GetElementPtrInst>(inst);
+
+    // 获取gep_inst的三个操作数
+    llvm::Value *ptr = gep_inst.getPointerOperand();
+    llvm::Value *index_1 = gep_inst.getOperand(1);
+    llvm::Value *index_2 = gep_inst.getOperand(2);
+    llvm::Value *result = &gep_inst;
 
     temp::Temp *ptr_temp = temp_map_->at(ptr);
-    temp::Temp *index_temp = temp_map_->at(index);
     temp::Temp *result_temp = temp_map_->at(result);
 
-    std::string assem = "leaq (`s0, `s1), `d0";
-    instr_list->Append(new assem::OperInstr(
-        assem, new temp::TempList({result_temp}),
-        new temp::TempList({ptr_temp, index_temp}), nullptr));
+    // 关于Leaq指令的格式
+    // leaq 8(%rbp, %rdi, 4), %rax
+
+    if (!index_2) {
+      // 两参数，存取数组
+      // 判断index_1是否为常数
+      temp::Temp *index_temp = nullptr;
+      if (llvm::ConstantInt *const_int =
+              llvm::dyn_cast<llvm::ConstantInt>(index_1)) {
+        // 如果是常数，先移动到寄存器
+        index_temp = temp::TempFactory::NewTemp();
+        instr_list->Append(new assem::OperInstr(
+            "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+            new temp::TempList({index_temp}), nullptr, nullptr));
+      } else {
+        // 如果不是常数，直接使用
+        index_temp = temp_map_->at(index_1);
+      }
+
+      std::string assem = "leaq (`s0,`s1,8), `d0";
+      instr_list->Append(new assem::OperInstr(
+          assem, new temp::TempList({result_temp}),
+          new temp::TempList({ptr_temp, index_temp}), nullptr));
+      break;
+    } else {
+      // 三参数，存取Record
+      // %5 = getelementptr %MyStruct, %MyStruct* %4, i32 0, i32 0
+
+      // FIXME: 处理GEP第二个参数不为0的情况
+      if (llvm::ConstantInt *const_int =
+              llvm::dyn_cast<llvm::ConstantInt>(index_1)) {
+        if (const_int->getSExtValue() != 0) {
+          throw std::runtime_error(
+              "Second parameter of GetElementPtr is not 0");
+        }
+      }
+
+      temp::Temp *index_temp_2 = nullptr;
+      if (llvm::ConstantInt *const_int =
+              llvm::dyn_cast<llvm::ConstantInt>(index_2)) {
+        // 如果是常数，先移动到寄存器
+        index_temp_2 = temp::TempFactory::NewTemp();
+        instr_list->Append(new assem::OperInstr(
+            "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+            new temp::TempList(index_temp_2), nullptr, nullptr));
+      } else {
+        // 如果不是常数，直接使用
+        index_temp_2 = temp_map_->at(index_2);
+      }
+
+      std::string assem = "leaq (`s0,`s1,8), `d0";
+      instr_list->Append(new assem::OperInstr(
+          assem, new temp::TempList({result_temp}),
+          new temp::TempList({ptr_temp, index_temp_2}), nullptr));
+      break;
+    }
     break;
   }
   // 5. llvm::Instruction::Store
