@@ -12,6 +12,7 @@
 #include <llvm-14/llvm/IR/Value.h>
 #include <llvm-14/llvm/Support/Casting.h>
 #include <llvm-14/llvm/Support/raw_ostream.h>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,13 @@ constexpr int maxlen = 1024;
 } // namespace
 
 namespace cg {
+
+int GenerateRandomNumber() {
+  static std::random_device rd;
+  static std::mt19937 gen(rd());
+  static std::uniform_int_distribution<> dis(1, 1000000000);
+  return dis(gen);
+}
 
 void CodeGen::Codegen() {
   // 初始化，创建`temp_map_`和`bb_map_`
@@ -325,9 +333,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     llvm::Value *rhs = inst.getOperand(1);
     llvm::Value *result = &inst;
 
-    // FIXME: Can lhs be a constant int?
-    temp::Temp *lhs_temp = temp_map_->at(lhs);
-    // NOTE: rhs can be a constant int
+    temp::Temp *lhs_temp = nullptr;
     temp::Temp *rhs_temp = nullptr;
     temp::Temp *result_temp = temp_map_->at(result);
 
@@ -336,24 +342,54 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       rhs_temp = it->second;
     }
 
-    if (rhs_temp) {
+    it = temp_map_->find(lhs);
+    if (it != temp_map_->end()) {
+      lhs_temp = it->second;
+    }
+
+    if (lhs_temp && rhs_temp) {
       // 使用 imulq 指令
-      // 三操作数形式
-      // imulq src1, src2, dst
-      std::string assem = "imulq `s0, `s1, `d0";
+      // NOTE: 测评的模拟器只支持两操作数形式！
+
+      // 1. movq lhs, result
+      instr_list->Append(new assem::MoveInstr("movq `s0, `d0",
+                                              new temp::TempList({result_temp}),
+                                              new temp::TempList({lhs_temp})));
+
+      // 2. imulq rhs, result
       instr_list->Append(new assem::OperInstr(
-          assem, new temp::TempList({result_temp}),
-          new temp::TempList({lhs_temp, rhs_temp}), nullptr));
-    } else if (llvm::ConstantInt *const_int =
-                   llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
-      std::string assem =
-          "imulq $" + std::to_string(const_int->getSExtValue()) + ", `s0, `d0";
-      instr_list->Append(
-          new assem::OperInstr(assem, new temp::TempList({result_temp}),
-                               new temp::TempList({lhs_temp}), nullptr));
+          "imulq `s0, `d0", new temp::TempList({result_temp}),
+          new temp::TempList({rhs_temp}), nullptr));
+      break;
+    }
+
+    // If there is at least one register
+    temp::Temp *reg = nullptr;
+    llvm::ConstantInt *const_int = nullptr;
+
+    // If lhs is a register
+    if (lhs_temp) {
+      // Check if rhs is a constant int
+      // %5 = add i64 %4, 8
+      reg = lhs_temp;
+      const_int = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+    } else if (rhs_temp) {
+      // Check if lhs is a constant int
+      // %16 = add i32 1, %15
+      reg = rhs_temp;
+      const_int = llvm::dyn_cast<llvm::ConstantInt>(lhs);
     } else {
       throw std::runtime_error("Unknown operand type");
     }
+
+    // movq reg, result
+    instr_list->Append(new assem::MoveInstr("movq `s0, `d0",
+                                            new temp::TempList({result_temp}),
+                                            new temp::TempList({reg})));
+    // imulq const_int, result
+    instr_list->Append(new assem::OperInstr(
+        "imulq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+        new temp::TempList({result_temp}), nullptr, nullptr));
 
     break;
   }
@@ -619,6 +655,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     // br label %if_test
     if (br_inst->isUnconditional()) {
       llvm::BasicBlock *uncond_bb = br_inst->getSuccessor(0);
+
+      // TODO: Before jump, move bb index to %rax?
+      instr_list->Append(new assem::MoveInstr(
+          "movq $" + std::to_string(bb_map_->at(br_inst->getParent())) +
+              ", `d0",
+          new temp::TempList(phi_temp_), nullptr));
+
       instr_list->Append(new assem::OperInstr(
           "jmp " + std::string(uncond_bb->getName()), new temp::TempList(),
           new temp::TempList(), nullptr));
@@ -647,6 +690,12 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // Jump to the corresponding label
     // FIXME: How do I get the targets?
+
+    // TODO: Before jump, move bb index to %rax?
+    instr_list->Append(new assem::MoveInstr(
+        "movq $" + std::to_string(bb_map_->at(br_inst->getParent())) + ", `d0",
+        new temp::TempList(phi_temp_), nullptr));
+
     instr_list->Append(new assem::OperInstr(
         "je " + std::string(true_bb->getName()), nullptr, nullptr, nullptr));
 
@@ -727,21 +776,88 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     // Get the value of the phi node
     // Move it to the result temp
 
+    // opand_next:                 ; preds = %opand_right_test, %isdigit
+    //   %42 = phi i1 [ false, %isdigit ], [ %41, %opand_right_test ]
+
+    // Review
+    // The value of %42 is defined as follows:
+    // If it jumps from %opand_right_test, it is %41
+    // If it jumps from %isdigit, it is false
+
+    // How can we know where it jumps from?
+
+    // In every unique label:
+    // Just move right value into the temporary register of PHI node
+    // And jump to the end label
+
     llvm::PHINode *phi_inst = llvm::dyn_cast<llvm::PHINode>(&inst);
     if (!phi_inst) {
       throw std::runtime_error("Failed to cast to PHINode");
     }
 
-    llvm::Value *result = &inst;
-    temp::Temp *result_temp = temp_map_->at(result);
+    temp::Temp *inst_temp = temp_map_->at(phi_inst);
+    llvm::BasicBlock *phi_bb = phi_inst->getParent();
+    std::string phi_bb_name = phi_bb->getName().str();
 
-    llvm::BasicBlock *incoming_bb = phi_inst->getIncomingBlock(0);
-    llvm::Value *incoming_val = phi_inst->getIncomingValueForBlock(incoming_bb);
-    temp::Temp *incoming_temp = temp_map_->at(incoming_val);
+    // Generate labels for each incoming value
+    std::vector<std::string> labels;
+    for (unsigned i = 0; i < phi_inst->getNumIncomingValues(); ++i) {
+      // TODO: Use non conflicting random numbers as labels
 
-    instr_list->Append(
-        new assem::MoveInstr("movq `s0, `d0", new temp::TempList({result_temp}),
-                             new temp::TempList({incoming_temp})));
+      // Generate random number
+
+      std::string label = phi_bb_name + "_phi_" + std::to_string(i) + "_" +
+                          std::to_string(GenerateRandomNumber());
+      labels.push_back(label);
+    }
+    std::string end_label = phi_bb_name + "_phi_end";
+
+    // TODO: Before every jump, move bb index into %rax
+    // FIXME: move into phi_temp_?
+
+    // In PHI, generate compare instructions:
+    // Compare between index and %rax (phi_temp_)?
+    // Jump to the right labels
+    for (unsigned i = 0; i < phi_inst->getNumIncomingValues(); ++i) {
+      llvm::BasicBlock *incoming_bb = phi_inst->getIncomingBlock(i);
+      int block_num = bb_map_->at(incoming_bb);
+      instr_list->Append(new assem::OperInstr(
+          "cmpq $" + std::to_string(block_num) + ", `s0", nullptr,
+          new temp::TempList(phi_temp_), nullptr));
+
+      instr_list->Append(
+          new assem::OperInstr("je " + labels[i], nullptr, nullptr, nullptr));
+    }
+
+    // Generate compare instructions and jump to the right labels
+    for (unsigned i = 0; i < phi_inst->getNumIncomingValues(); ++i) {
+      // In PHI, generate labels:
+      // Every condition will have a unique label
+      instr_list->Append(new assem::LabelInstr(labels[i]));
+      // incoming value can be int or register
+      llvm::Value *incoming_value = phi_inst->getIncomingValue(i);
+
+      temp::Temp *incoming_temp = nullptr;
+      auto it = temp_map_->find(incoming_value);
+      if (it != temp_map_->end()) {
+        incoming_temp = it->second;
+      }
+      if (incoming_temp) {
+        instr_list->Append(new assem::OperInstr(
+            "movq `s0, `d0", new temp::TempList({inst_temp}),
+            new temp::TempList({incoming_temp}), nullptr));
+      } else if (llvm::ConstantInt *const_int =
+                     llvm::dyn_cast<llvm::ConstantInt>(incoming_value)) {
+        instr_list->Append(new assem::OperInstr(
+            "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+            new temp::TempList({inst_temp}), nullptr, nullptr));
+      }
+      instr_list->Append(
+          new assem::OperInstr("jmp " + end_label, nullptr, nullptr, nullptr));
+    }
+
+    // And an end label just shows the end of PHI node
+    instr_list->Append(new assem::LabelInstr(end_label));
 
     break;
   }

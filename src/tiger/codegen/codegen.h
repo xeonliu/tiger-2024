@@ -78,6 +78,8 @@ private:
   // for phi node, record mapping from llvm basic block to index of the block,
   // to check which block it jumps from
   std::unordered_map<llvm::BasicBlock *, int> *bb_map_;
+
+  // Before every jump, move bb index into %rax
   // for phi node, use a temp to record which block it jumps from
   temp::Temp *phi_temp_;
   // 储存函数的基本块和相关信息
