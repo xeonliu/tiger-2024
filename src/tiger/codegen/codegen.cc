@@ -452,8 +452,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // 获取gep_inst的三个操作数
     llvm::Value *ptr = gep_inst.getPointerOperand();
+    // Check Operand Number
+
     llvm::Value *index_1 = gep_inst.getOperand(1);
-    llvm::Value *index_2 = gep_inst.getOperand(2);
+    llvm::Value *index_2 = nullptr;
+    if (gep_inst.getNumOperands() == 3) {
+      index_2 = gep_inst.getOperand(2);
+    }
     llvm::Value *result = &gep_inst;
 
     temp::Temp *ptr_temp = temp_map_->at(ptr);
