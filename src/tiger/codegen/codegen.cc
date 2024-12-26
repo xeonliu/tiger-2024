@@ -842,7 +842,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // opand_next:                 ; preds = %opand_right_test, %isdigit
     //   %42 = phi i1 [ false, %isdigit ], [ %41, %opand_right_test ]
-
+    // %47 = phi %MyStruct.0* [ %34, %if_then ], [ null, %if_else ]
     // Review
     // The value of %42 is defined as follows:
     // If it jumps from %opand_right_test, it is %41
@@ -915,6 +915,15 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
         instr_list->Append(new assem::OperInstr(
             "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
             new temp::TempList({inst_temp}), nullptr, nullptr));
+      } else if (llvm::ConstantPointerNull *const_ptr =
+                     llvm::dyn_cast<llvm::ConstantPointerNull>(
+                         incoming_value)) {
+        // if incoming_value is null
+        // merge.tig.ll: %47 = phi %MyStruct.0* [ %34, %if_then ], [ null, %if_else ]
+        instr_list->Append(new assem::MoveInstr(
+            "movq $0, `d0", new temp::TempList({inst_temp}), nullptr));
+      } else {
+        throw std::runtime_error("Unknown incoming value type");
       }
       instr_list->Append(
           new assem::OperInstr("jmp " + end_label, nullptr, nullptr, nullptr));
