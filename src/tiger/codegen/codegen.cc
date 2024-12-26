@@ -752,7 +752,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     // Compare with 1 or 0
     // FIXME: Maybe check 0 is better?
     instr_list->Append(new assem::OperInstr(
-        "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
+        "cmpq $0, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
 
     // Jump to the corresponding label
     // TODO: Before jump, move bb index to %rax?
@@ -761,10 +761,10 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
         new temp::TempList(phi_temp_), nullptr));
 
     instr_list->Append(new assem::OperInstr(
-        "je " + std::string(true_bb->getName()), nullptr, nullptr, nullptr));
+        "je " + std::string(false_bb->getName()), nullptr, nullptr, nullptr));
 
     instr_list->Append(new assem::OperInstr(
-        "jmp " + std::string(false_bb->getName()), nullptr, nullptr, nullptr));
+        "jmp " + std::string(true_bb->getName()), nullptr, nullptr, nullptr));
 
     break;
   }
