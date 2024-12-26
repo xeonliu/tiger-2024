@@ -41,7 +41,7 @@ void CodeGen::Codegen() {
   // 将llvm::Value* 映射到临时变量
   temp_map_ = new std::unordered_map<llvm::Value *, temp::Temp *>();
   // 将Basic Block 映射到整数
-  // TODO: 是否是用于Branch指令？
+  // NOTE: 用于 PHI 指令，跳转前将当前基本块的索引存入临时变量
   bb_map_ = new std::unordered_map<llvm::BasicBlock *, int>();
   // 初始化汇编指令列表，这也就是最终要生成的汇编代码
   auto *list = new assem::InstrList();
@@ -209,7 +209,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
     // Map every LLVM instruction’s generated value to a temporary register
 
-    // TODO: Load a global variable?
+    // NOTE: For global variable
     // %2 = load i64, i64* @tigermain_framesize_global, align 4
     if (llvm::GlobalVariable *global_var =
             llvm::dyn_cast<llvm::GlobalVariable>(ptr)) {
@@ -415,6 +415,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
                                             nullptr)); // 扩展 RAX 到 RDX:RAX
 
     if (rhs_temp) {
+      // rhs_temp already exists, do nothing
     } else if (llvm::ConstantInt *const_int =
                    llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
       rhs_temp = temp::TempFactory::NewTemp();
@@ -434,7 +435,6 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
   }
   case llvm::Instruction::PtrToInt:
   case llvm::Instruction::IntToPtr: {
-    // FIXME: Do I need this useless move?
     // Use MoveInstr
     llvm::Value *src = inst.getOperand(0);
     llvm::Value *result = &inst;
@@ -693,7 +693,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     auto it = temp_map_->find(ret_val);
     if (it != temp_map_->end()) {
       ret_val_temp = it->second;
-      // FIXME: Jump to the exit label
+      // FIXME: what are jumps for?
       instr_list->Append(
           new assem::OperInstr("movq `s0, `d0",
                                new temp::TempList(reg_manager->GetRegister(
@@ -729,8 +729,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
 
       // TODO: Before jump, move bb index to %rax?
       instr_list->Append(new assem::MoveInstr(
-          "movq $" + std::to_string(bb_map_->at(br_inst->getParent())) +
-              ", `d0",
+          "movq $" + std::to_string(bb_map_->at(bb)) + ", `d0",
           new temp::TempList(phi_temp_), nullptr));
 
       instr_list->Append(new assem::OperInstr(
@@ -751,13 +750,14 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     temp::Temp *cond_temp = temp_map_->at(cond);
 
     // Compare with 1 or 0
+    // FIXME: Maybe check 0 is better?
     instr_list->Append(new assem::OperInstr(
         "cmpq $1, `s0", nullptr, new temp::TempList({cond_temp}), nullptr));
 
     // Jump to the corresponding label
     // TODO: Before jump, move bb index to %rax?
     instr_list->Append(new assem::MoveInstr(
-        "movq $" + std::to_string(bb_map_->at(br_inst->getParent())) + ", `d0",
+        "movq $" + std::to_string(bb_map_->at(bb)) + ", `d0",
         new temp::TempList(phi_temp_), nullptr));
 
     instr_list->Append(new assem::OperInstr(
@@ -906,25 +906,39 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       if (it != temp_map_->end()) {
         incoming_temp = it->second;
       }
+      llvm::errs() << "SHIT";
       if (incoming_temp) {
         instr_list->Append(new assem::OperInstr(
             "movq `s0, `d0", new temp::TempList({inst_temp}),
             new temp::TempList({incoming_temp}), nullptr));
-      } else if (llvm::ConstantInt *const_int =
-                     llvm::dyn_cast<llvm::ConstantInt>(incoming_value)) {
-        instr_list->Append(new assem::OperInstr(
-            "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
-            new temp::TempList({inst_temp}), nullptr, nullptr));
+      }
+
+      else if (llvm::ConstantInt *const_int =
+                   llvm::dyn_cast<llvm::ConstantInt>(incoming_value)) {
+        if (const_int->getType()->isIntegerTy(1)) {
+          // FIXME: 为何True被翻译成-1？
+          // Boolean true is represented as -1 in LLVM IR
+          int64_t bool_value = const_int->getSExtValue() ? 1 : 0;
+          instr_list->Append(new assem::OperInstr(
+              "movq $" + std::to_string(bool_value) + ", `d0",
+              new temp::TempList({inst_temp}), nullptr, nullptr));
+        } else {
+          instr_list->Append(new assem::OperInstr(
+              "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
+              new temp::TempList({inst_temp}), nullptr, nullptr));
+        }
       } else if (llvm::ConstantPointerNull *const_ptr =
                      llvm::dyn_cast<llvm::ConstantPointerNull>(
                          incoming_value)) {
         // if incoming_value is null
-        // merge.tig.ll: %47 = phi %MyStruct.0* [ %34, %if_then ], [ null, %if_else ]
+        // merge.tig.ll: %47 = phi %MyStruct.0* [ %34, %if_then ], [ null,
+        // %if_else ]
         instr_list->Append(new assem::MoveInstr(
             "movq $0, `d0", new temp::TempList({inst_temp}), nullptr));
       } else {
         throw std::runtime_error("Unknown incoming value type");
       }
+
       instr_list->Append(
           new assem::OperInstr("jmp " + end_label, nullptr, nullptr, nullptr));
     }
@@ -938,9 +952,6 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     throw std::runtime_error(std::string("Unknown instruction: ") +
                              inst.getOpcodeName());
   }
-
-  // FIXME: Debug Print the generated instruction
-  // instr_list->GetList().back()->Print(stderr, reg_manager->temp_map_);
 }
 
 } // namespace cg
