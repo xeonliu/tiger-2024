@@ -23,6 +23,9 @@ class ProcFrag;
 
 namespace canon {
 
+/**!SECTION
+管理一个基本快列表，提供方法将基本块添加到列表中，并获取基本块列表
+ */
 class BasicBlockList {
   friend class Canon;
 
@@ -40,6 +43,9 @@ private:
   std::list<llvm::BasicBlock *> basicblock_list_;
 };
 
+/**!SECTION
+管理一个函数的基本块和相关信息，提供方法获取基本块列表、函数名和函数体
+ */
 class Traces {
 public:
   Traces() = delete;
@@ -70,7 +76,9 @@ private:
   BasicBlockList *basicblock_list_;
   std::string function_name_;
 };
-
+/**!SECTION
+管理一个函数的基本快和相关信息，提供方法将IR树转换为基本快，并管理这些基本快的顺序和所有权。
+ */
 class Canon {
   friend class frame::ProcFrag;
 
