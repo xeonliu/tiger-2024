@@ -26,6 +26,7 @@ public:
 private:
   assem::InstrList *instr_list_;
   FGraphPtr flowgraph_;
+  // label_map_ can be used to remember mappings between labels and nodes
   std::unique_ptr<std::map<std::string, FNode *>> label_map_;
 };
 
