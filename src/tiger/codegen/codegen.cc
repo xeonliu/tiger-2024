@@ -680,11 +680,15 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     // Check if RetInst has param
     llvm::Value *ret_val = ret_inst->getReturnValue();
 
+    // Target Label
+    auto label_name = std::string(function_name) + "_exit";
+    auto target = temp::LabelFactory::NamedLabel(label_name);
+
     // NOTE: For ret void
     if (!ret_val) {
       instr_list->Append(
-          new assem::OperInstr("jmp " + std::string(function_name) + "_exit",
-                               nullptr, nullptr, nullptr));
+          new assem::OperInstr("jmp " + label_name, nullptr, nullptr,
+                               new assem::Targets(new std::vector{target})));
       break;
     }
 
@@ -694,6 +698,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     if (it != temp_map_->end()) {
       ret_val_temp = it->second;
       // FIXME: what are jumps for?
+      // Used to construct Flow Graph in Lab6
       instr_list->Append(
           new assem::OperInstr("movq `s0, `d0",
                                new temp::TempList(reg_manager->GetRegister(
@@ -711,8 +716,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     }
 
     instr_list->Append(
-        new assem::OperInstr("jmp " + std::string(function_name) + "_exit",
-                             nullptr, nullptr, nullptr));
+        new assem::OperInstr("jmp " + label_name, nullptr, nullptr,
+                             new assem::Targets(new std::vector{target})));
 
     break;
   }
@@ -732,9 +737,10 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
           "movq $" + std::to_string(bb_map_->at(bb)) + ", `d0",
           new temp::TempList(phi_temp_), nullptr));
 
+      auto target = temp::LabelFactory::NamedLabel(uncond_bb->getName());
       instr_list->Append(new assem::OperInstr(
           "jmp " + std::string(uncond_bb->getName()), new temp::TempList(),
-          new temp::TempList(), nullptr));
+          new temp::TempList(), new assem::Targets(new std::vector{target})));
       break;
     }
 
@@ -760,11 +766,16 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
         "movq $" + std::to_string(bb_map_->at(bb)) + ", `d0",
         new temp::TempList(phi_temp_), nullptr));
 
+    auto false_target = temp::LabelFactory::NamedLabel(false_bb->getName());
     instr_list->Append(new assem::OperInstr(
-        "je " + std::string(false_bb->getName()), nullptr, nullptr, nullptr));
+        "je " + std::string(false_bb->getName()), nullptr, nullptr,
+        new assem::Targets(
+            new std::vector<temp::Label *>{false_target, nullptr})));
 
+    auto true_target = temp::LabelFactory::NamedLabel(true_bb->getName());
     instr_list->Append(new assem::OperInstr(
-        "jmp " + std::string(true_bb->getName()), nullptr, nullptr, nullptr));
+        "jmp " + std::string(true_bb->getName()), nullptr, nullptr,
+        new assem::Targets(new std::vector{true_target})));
 
     break;
   }
@@ -889,8 +900,10 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
           "cmpq $" + std::to_string(block_num) + ", `s0", nullptr,
           new temp::TempList(phi_temp_), nullptr));
 
-      instr_list->Append(
-          new assem::OperInstr("je " + labels[i], nullptr, nullptr, nullptr));
+      auto target = temp::LabelFactory::NamedLabel(labels[i]);
+      instr_list->Append(new assem::OperInstr(
+          "je " + labels[i], nullptr, nullptr,
+          new assem::Targets(new std::vector<temp::Label *>{target, nullptr})));
     }
 
     // Generate compare instructions and jump to the right labels
@@ -939,8 +952,10 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
         throw std::runtime_error("Unknown incoming value type");
       }
 
-      instr_list->Append(
-          new assem::OperInstr("jmp " + end_label, nullptr, nullptr, nullptr));
+      auto end_target = temp::LabelFactory::NamedLabel(end_label);
+      instr_list->Append(new assem::OperInstr(
+          "jmp " + end_label, nullptr, nullptr,
+          new assem::Targets(new std::vector{end_target})));
     }
 
     // And an end label just shows the end of PHI node

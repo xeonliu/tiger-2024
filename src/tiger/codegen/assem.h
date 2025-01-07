@@ -15,6 +15,7 @@ namespace assem {
  */
 class Targets {
 public:
+  // FIXME: 我决定采取这种设计：如果可以FallThrough,那我就添加一条nullptr记录
   std::vector<temp::Label *> *labels_;
 
   explicit Targets(std::vector<temp::Label *> *labels) : labels_(labels) {}
