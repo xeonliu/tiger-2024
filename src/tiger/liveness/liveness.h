@@ -37,8 +37,15 @@ private:
   std::list<std::pair<INodePtr, INodePtr>> move_list_;
 };
 
+/**
+ * @brief 活跃分析图？包括冲突图和移动列表？
+ * @note   
+ * @retval None
+ */
 struct LiveGraph {
   IGraphPtr interf_graph;
+
+  // 记录了所有从src到dst的移动指令
   MoveList *moves;
 
   LiveGraph(IGraphPtr interf_graph, MoveList *moves)
@@ -47,6 +54,8 @@ struct LiveGraph {
 
 class LiveGraphFactory {
 public:
+  // Takes a flow graph to produce liveness information at the exit of each flownode
+  // 接受一个流图并在每个流图节点的出口生成活跃信息
   explicit LiveGraphFactory(fg::FGraphPtr flowgraph)
       : flowgraph_(flowgraph), live_graph_(new IGraph(), new MoveList()),
         in_(std::make_unique<graph::Table<assem::Instr, temp::TempList>>()),
@@ -58,10 +67,18 @@ public:
 
 private:
   fg::FGraphPtr flowgraph_;
+  // Live Graph 是什么？
   LiveGraph live_graph_;
 
+  // Key data structure
+  // Remember what is live at the exit of `flownode`
+  // Using two tables (in/out) to attach information
+  // Using Enter to remember, Look to get info.
+  // 记录在流图节点入口处活跃的临时变量
   std::unique_ptr<graph::Table<assem::Instr, temp::TempList>> in_;
+  // 记录在流图节点出口处活跃的临时变量
   std::unique_ptr<graph::Table<assem::Instr, temp::TempList>> out_;
+  // TODO: 这是干吗用的？
   tab::Table<temp::Temp, INode> *temp_node_map_;
 
   void LiveMap();
