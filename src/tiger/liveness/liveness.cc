@@ -1,4 +1,6 @@
 #include "tiger/liveness/liveness.h"
+#include "tiger/codegen/assem.h"
+#include "tiger/frame/temp.h"
 #include <cassert>
 
 extern frame::RegManager *reg_manager;
@@ -56,9 +58,14 @@ void LiveGraphFactory::LiveMap() {
     out_->Enter(n, new temp::TempList());
   }
 
+  // 每轮要记录一个列表的是否变化
+  // 每个列表对应一个节点
+  // 如果某个节点的in和out没有变化，说明已经收敛
+  // 每次清空
   bool change = true;
-
   while (change) {
+    // Assume no change
+    change = false;
     // Repeat for each n until no change
     for (auto n : flowgraph_->Nodes()->GetList()) {
 
@@ -77,17 +84,13 @@ void LiveGraphFactory::LiveMap() {
         new_out = new_out->Union(in_->Look(s));
       }
 
-      if (in->Equal(new_in) && out->Equal(new_out)) {
-        change = false;
-        continue;
-      } else {
+      // Check if there is any change
+      if (!new_in->Equal(in) || !new_out->Equal(out)) {
         change = true;
+        in_->Set(n, new_in);
+        out_->Set(n, new_out);
       }
-
-      in_->Enter(n, new_in);
-      out_->Enter(n, new_out);
     }
-    // Check if there is any change
   }
 
   // No Change. Finish
@@ -99,6 +102,8 @@ void LiveGraphFactory::LiveMap() {
  * @note
  * @retval None
  */
+// FIXME： 存入机器寄存器
+// 单独加入RSP
 void LiveGraphFactory::InterfGraph() {
   /* TODO: Put your lab6 code here */
   // Takes a flow graph to produce a live::LiveGraph
@@ -113,12 +118,38 @@ void LiveGraphFactory::InterfGraph() {
   // NOTE: 冲突图是一个由temp::Temp*组成的Graph
   // NOTE: 使用temp_node_map_记录每个临时变量对应的节点
 
-  // 首先添加所有的临时变量
+  // TODO: 添加机器寄存器
+  std::list<temp::Temp *> temps = reg_manager->Registers()->GetList();
+  // TODO: 添加RSP（RSP不在List中）
+  temps.emplace_back(reg_manager->FramePointer());
+
+  // 任意两个机器寄存器之间都有冲突边
+  for (temp::Temp *temp1 : temps) {
+    for (temp::Temp *temp2 : temps) {
+      if (temp1 != temp2) {
+        auto temp_node1 = temp_node_map_->Look(temp1);
+        auto temp_node2 = temp_node_map_->Look(temp2);
+        live_graph_.interf_graph->AddEdge(temp_node1, temp_node2);
+      }
+    }
+  }
+
+  // 添加所有的临时变量
   for (auto n : flowgraph_->Nodes()->GetList()) {
-    auto def = n->NodeInfo()->Def();
-    for (auto d : def->GetList()) {
-      auto temp_node = live_graph_.interf_graph->NewNode(d);
-      temp_node_map_->Enter(d, temp_node);
+    // 加入所有的Def和Use
+    // FIXME: NullPtr
+    assem::Instr *instr = n->NodeInfo();
+    for (temp::Temp *temp : instr->Use()->GetList()) {
+      if (!temp_node_map_->Look(temp)) {
+        auto temp_node = live_graph_.interf_graph->NewNode(temp);
+        temp_node_map_->Enter(temp, temp_node);
+      }
+    }
+    for (temp::Temp *temp : instr->Def()->GetList()) {
+      if (!temp_node_map_->Look(temp)) {
+        auto temp_node = live_graph_.interf_graph->NewNode(temp);
+        temp_node_map_->Enter(temp, temp_node);
+      }
     }
   }
 
@@ -127,72 +158,35 @@ void LiveGraphFactory::InterfGraph() {
   // 并且有属于liveMap的临时变量{t1, t2, ...}，
   // 则为d和{t1, t2, ...}添加干涉边
   for (auto n : flowgraph_->Nodes()->GetList()) {
-    bool is_move_inst = false;
+    assem::Instr *instr = n->NodeInfo();
+    temp::TempList *out = out_->Look(n);
 
-    // 检查指令是否是移动指令
-    // Try to cast to MoveInstr
-    if (auto move_inst = dynamic_cast<assem::MoveInstr *>(n->NodeInfo())) {
-      is_move_inst = true;
+    // 对于任何对变量 a define 的非传送指令，
+    // 以及在该指令处是出口活跃的变量b1, ..., bj,
+    // 添加冲突边(a,b1), ..., (a, bj).
 
-      // 确定src和dst
-      temp::Temp *src = nullptr;
-      temp::Temp *dst = nullptr;
-
-      // Check Null Ptr
-      if (move_inst->src_) {
-        src = move_inst->src_->NthTemp(0);
-      }
-
-      // 显然目标寄存器必须存在
-      assert(move_inst->dst_);
-      dst = move_inst->dst_->NthTemp(0);
-      auto dst_node = temp_node_map_->Look(dst);
-
-      // move的目标应当与def相同
-      auto def_list = n->NodeInfo()->Def()->GetList();
-      assert(def_list.size() == 1);
-      assert(def_list.front() == dst);
-
-      // 对于传送指令a<-c，
-      // 如果变量b1,...,bj在该指令处是出口活跃的，
-      // 则对每一个不同于c的bi添加冲突边
-      auto out = out_->Look(n);
-      for (auto t : out->GetList()) {
-        // 忽略src临时变量
-        if (t == src) {
-          continue;
-        }
-
-        auto t_node = temp_node_map_->Look(t);
-
-        if (dst != t) {
-          /* 添加冲突边 */
-          live_graph_.interf_graph->AddEdge(dst_node, t_node);
-        }
-      }
-
-      /* 添加移动边 */
-      // TODO: If and only if src and dst both exists?
-      if (src) {
-        auto src_node = temp_node_map_->Look(src);
-        live_graph_.moves->Append(src_node, dst_node);
-      }
-
-    } else {
-      // 对于任何对变量 a define 的非传送指令，
-      // 以及在该指令处是出口活跃的变量b1, ..., bj,
-      // 添加冲突边(a,b1), ..., (a, bj).
-      auto out = out_->Look(n);
-      auto def = n->NodeInfo()->Def();
-      auto def_list = def->GetList();
-      for (auto d : def_list) {
-        auto d_node = temp_node_map_->Look(d);
-        for (auto t : out->GetList()) {
-          // 出口活跃的变量
-          auto t_node = temp_node_map_->Look(t);
-          if (d != t) {
-            live_graph_.interf_graph->AddEdge(d_node, t_node);
+    for (temp::Temp *def : instr->Def()->GetList()) {
+      INodePtr def_node = temp_node_map_->Look(def);
+      if (typeid(*instr) == typeid(assem::MoveInstr)) {
+        for (temp::Temp *b : out->GetList()) {
+          // 对于不同于Use的变量，添加冲突边
+          INodePtr b_node = temp_node_map_->Look(b);
+          if (!instr->Use()->Contain(b)) {
+            // 添加双向边
+            live_graph_.interf_graph->AddEdge(def_node, b_node);
+            live_graph_.interf_graph->AddEdge(b_node, def_node);
           }
+        }
+        // 添加Use和Def之间的传送边
+        for (temp::Temp *use : instr->Use()->GetList()) {
+          INodePtr use_node = temp_node_map_->Look(use);
+          live_graph_.moves->Union(use_node, def_node);
+        }
+      } else {
+        for (temp::Temp *b : out->GetList()) {
+          INodePtr b_node = temp_node_map_->Look(b);
+          live_graph_.interf_graph->AddEdge(def_node, b_node);
+          live_graph_.interf_graph->AddEdge(b_node, def_node);
         }
       }
     }
