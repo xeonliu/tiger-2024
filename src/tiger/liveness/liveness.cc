@@ -123,6 +123,12 @@ void LiveGraphFactory::InterfGraph() {
   // TODO: 添加RSP（RSP不在List中）
   temps.emplace_back(reg_manager->FramePointer());
 
+  // 添加所有的机器寄存器到干涉图
+  for (temp::Temp *temp : temps) {
+    auto temp_node = live_graph_.interf_graph->NewNode(temp);
+    temp_node_map_->Enter(temp, temp_node);
+  }
+
   // 任意两个机器寄存器之间都有冲突边
   for (temp::Temp *temp1 : temps) {
     for (temp::Temp *temp2 : temps) {
@@ -139,16 +145,20 @@ void LiveGraphFactory::InterfGraph() {
     // 加入所有的Def和Use
     // FIXME: NullPtr
     assem::Instr *instr = n->NodeInfo();
-    for (temp::Temp *temp : instr->Use()->GetList()) {
-      if (!temp_node_map_->Look(temp)) {
-        auto temp_node = live_graph_.interf_graph->NewNode(temp);
-        temp_node_map_->Enter(temp, temp_node);
+    if (instr->Use()) {
+      for (temp::Temp *temp : instr->Use()->GetList()) {
+        if (!temp_node_map_->Look(temp)) {
+          auto temp_node = live_graph_.interf_graph->NewNode(temp);
+          temp_node_map_->Enter(temp, temp_node);
+        }
       }
     }
-    for (temp::Temp *temp : instr->Def()->GetList()) {
-      if (!temp_node_map_->Look(temp)) {
-        auto temp_node = live_graph_.interf_graph->NewNode(temp);
-        temp_node_map_->Enter(temp, temp_node);
+    if (instr->Def()) {
+      for (temp::Temp *temp : instr->Def()->GetList()) {
+        if (!temp_node_map_->Look(temp)) {
+          auto temp_node = live_graph_.interf_graph->NewNode(temp);
+          temp_node_map_->Enter(temp, temp_node);
+        }
       }
     }
   }
@@ -164,29 +174,30 @@ void LiveGraphFactory::InterfGraph() {
     // 对于任何对变量 a define 的非传送指令，
     // 以及在该指令处是出口活跃的变量b1, ..., bj,
     // 添加冲突边(a,b1), ..., (a, bj).
-
-    for (temp::Temp *def : instr->Def()->GetList()) {
-      INodePtr def_node = temp_node_map_->Look(def);
-      if (typeid(*instr) == typeid(assem::MoveInstr)) {
-        for (temp::Temp *b : out->GetList()) {
-          // 对于不同于Use的变量，添加冲突边
-          INodePtr b_node = temp_node_map_->Look(b);
-          if (!instr->Use()->Contain(b)) {
-            // 添加双向边
+    if (instr->Def()) {
+      for (temp::Temp *def : instr->Def()->GetList()) {
+        INodePtr def_node = temp_node_map_->Look(def);
+        if (typeid(*instr) == typeid(assem::MoveInstr)) {
+          for (temp::Temp *b : out->GetList()) {
+            // 对于不同于Use的变量，添加冲突边
+            INodePtr b_node = temp_node_map_->Look(b);
+            if (!instr->Use()->Contain(b)) {
+              // 添加双向边
+              live_graph_.interf_graph->AddEdge(def_node, b_node);
+              live_graph_.interf_graph->AddEdge(b_node, def_node);
+            }
+          }
+          // 添加Use和Def之间的传送边
+          for (temp::Temp *use : instr->Use()->GetList()) {
+            INodePtr use_node = temp_node_map_->Look(use);
+            live_graph_.moves->Union(use_node, def_node);
+          }
+        } else {
+          for (temp::Temp *b : out->GetList()) {
+            INodePtr b_node = temp_node_map_->Look(b);
             live_graph_.interf_graph->AddEdge(def_node, b_node);
             live_graph_.interf_graph->AddEdge(b_node, def_node);
           }
-        }
-        // 添加Use和Def之间的传送边
-        for (temp::Temp *use : instr->Use()->GetList()) {
-          INodePtr use_node = temp_node_map_->Look(use);
-          live_graph_.moves->Union(use_node, def_node);
-        }
-      } else {
-        for (temp::Temp *b : out->GetList()) {
-          INodePtr b_node = temp_node_map_->Look(b);
-          live_graph_.interf_graph->AddEdge(def_node, b_node);
-          live_graph_.interf_graph->AddEdge(b_node, def_node);
         }
       }
     }

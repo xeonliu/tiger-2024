@@ -97,6 +97,7 @@ public:
 
 private:
   void Build();
+  void AddEdge(live::INodePtr u, live::INodePtr v);
   void MakeWorklist();
   live::INodeListPtr Adjacent(live::INodePtr node);
   live::MoveList *NodeMoves(live::INodePtr node);
@@ -113,7 +114,7 @@ private:
   void Freeze();
   void FreezeMoves(live::INodePtr u);
   void SelectSpill();
-  col::Result AssignColors();
+  void AssignColors();
   void RewriteProgram();
 
   std::string proc_name_;
@@ -124,6 +125,8 @@ private:
   // FIXME: Adjacent list: Only for normal temporaries??
   live::IGraphPtr interference_graph_;
   live::MoveList *moves_;
+  // Used in Build.
+  tab::Table<temp::Temp, live::INode> *temp_node_map_;
 
   // 机器寄存器集合
   live::INodeListPtr precolored_;

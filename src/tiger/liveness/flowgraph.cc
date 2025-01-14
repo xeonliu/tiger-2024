@@ -63,12 +63,16 @@ void FlowGraphFactory::AssemFlowGraph() {
 
     // 1. OperInstr
     if (auto oper_instr = dynamic_cast<assem::OperInstr *>(inst)) {
+      // 如果当前是最后一个指令
+      if (std::next(instr_node_map.find(inst)) == instr_node_map.end()) {
+        break;
+      }
       // Check if the instruction is a jump
       if (oper_instr->jumps_) {
+        // 如果当前指令是跳转指令
         // Get the label
         auto label_temps = oper_instr->jumps_->labels_;
         for (auto label_temp : *label_temps) {
-          
 
           // FIXME: 不跳转Label，跳转到下一条指令
           if (label_temp == nullptr) {
@@ -89,18 +93,27 @@ void FlowGraphFactory::AssemFlowGraph() {
           // Add an edge between the current node and the label node
           flowgraph_->AddEdge(node, label_node);
         }
-        break;
+        // FIXME: continue?
+        // 条件漏了
+      } else {
+        // 如果当前指令是Operstr，但不是跳转指令
+        // Get the next instruction
+        auto next_inst = std::next(instr_node_map.find(inst))->first;
+        // Get the node corresponding to the next instruction
+        auto next_node = instr_node_map.at(next_inst);
+        // Add an edge between the current node and the next node
+        flowgraph_->AddEdge(node, next_node);
       }
+    } else {
+      // 2. LabelInstr
+      // 3. MoveInstr
+      // Get the next instruction
+      auto next_inst = std::next(instr_node_map.find(inst))->first;
+      // Get the node corresponding to the next instruction
+      auto next_node = instr_node_map.at(next_inst);
+      // Add an edge between the current node and the next node
+      flowgraph_->AddEdge(node, next_node);
     }
-
-    // 2. LabelInstr
-    // 3. MoveInstr
-    // Get the next instruction
-    auto next_inst = std::next(instr_node_map.find(inst))->first;
-    // Get the node corresponding to the next instruction
-    auto next_node = instr_node_map.at(next_inst);
-    // Add an edge between the current node and the next node
-    flowgraph_->AddEdge(node, next_node);
   }
 }
 

@@ -1,3 +1,4 @@
+// This file is used in lab6
 #ifndef TIGER_UTIL_GRAPH_H_
 #define TIGER_UTIL_GRAPH_H_
 
@@ -17,10 +18,13 @@ public:
   NodeList<T> *Nodes();
 
   // Make a new node in graph "g", with associated "info_"
+  // Make a new node within graph g
+  // x is any extra information "attahced" to the node
   Node<T> *NewNode(T *info);
 
   // Make a new edge joining nodes "from" and "to", which must belong
   // to the same graph
+  // n->Succ()->Append(m), m->Pred()->Append(n)
   void AddEdge(Node<T> *from, Node<T> *to);
 
   // Show all the nodes and edges in the graph, using the function "show_info"
@@ -36,6 +40,12 @@ private:
   NodeList<T> *my_nodes_;
 };
 
+/**
+ * @brief  
+ * @note   Two ways to map from node to things
+ *         1. Put things in node directly ( n = g->NewNode(info) )
+ *         2. Use a table to map from node to things graph::Table = table::Table<Node<T>, ValueType>
+ */
 template <typename T> class Node {
   template <typename NodeType> friend class Graph;
 
@@ -108,6 +118,7 @@ public:
 
   // Set operation on two lists
   NodeList<T> *Union(NodeList<T> *nl);
+  void Union(Node<T> *n);
   NodeList<T> *Diff(NodeList<T> *nl);
 
   [[nodiscard]] const std::list<Node<T> *> &GetList() const {
@@ -258,6 +269,12 @@ void Graph<T>::Show(FILE *out, NodeList<T> *p,
     for (auto q : n->Pred()->node_list_)
       fprintf(out, "%d ", q->Key());
     fprintf(out, "\n");
+  }
+}
+
+template <typename T> void NodeList<T>::Union(Node<T> *n) {
+  if (!Contain(n)) {
+    node_list_.push_back(n);
   }
 }
 

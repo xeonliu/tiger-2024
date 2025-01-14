@@ -1,6 +1,7 @@
 #include "tiger/codegen/codegen.h"
 #include "tiger/codegen/assem.h"
 #include "tiger/frame/temp.h"
+#include "tiger/frame/x64frame.h"
 
 #include <cassert>
 #include <iostream>
@@ -410,7 +411,10 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
     // 使用 idivq 指令
     // 需要将被除数放入 RAX 和 RDX 中
     instr_list->Append(new assem::OperInstr(
-        "movq `s0, %rax", nullptr, new temp::TempList({lhs_temp}), nullptr));
+        "movq `s0, %rax",
+        new temp::TempList(
+            {reg_manager->GetRegister(frame::X64RegManager::RAX)}),
+        new temp::TempList({lhs_temp}), nullptr));
     instr_list->Append(new assem::OperInstr("cqto", nullptr, nullptr,
                                             nullptr)); // 扩展 RAX 到 RDX:RAX
 
@@ -426,10 +430,20 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       throw std::runtime_error("Unknown operand type");
     }
 
+    // idivq 指令会修改以下寄存器的值
+    // RAX 储存商
+    // RDX 储存余数
     instr_list->Append(new assem::OperInstr(
-        "idivq `s0", nullptr, new temp::TempList({rhs_temp}), nullptr));
+        "idivq `s0",
+        new temp::TempList(
+            {reg_manager->GetRegister(frame::X64RegManager::RDX),
+             reg_manager->GetRegister(frame::X64RegManager::RAX)}),
+        new temp::TempList({rhs_temp}), nullptr));
     instr_list->Append(new assem::OperInstr(
-        "movq %rax, `d0", new temp::TempList({result_temp}), nullptr, nullptr));
+        "movq %rax, `d0", new temp::TempList({result_temp}),
+        new temp::TempList(
+            {reg_manager->GetRegister(frame::X64RegManager::RAX)}),
+        nullptr));
 
     break;
   }
@@ -543,17 +557,18 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       value_temp = it->second;
     }
     // FIXME: What is source and what is destination?
+    // 使用的寄存器是src，修改的寄存器是dst
+    // 对于Store指令，都是src
     if (value_temp) {
-      std::string assem = "movq `s0, (`d0)";
-      instr_list->Append(
-          new assem::MoveInstr(assem, new temp::TempList{ptr_temp},
-                               new temp::TempList({value_temp})));
+      std::string assem = "movq `s0, (`s1)";
+      instr_list->Append(new assem::MoveInstr(
+          assem, nullptr, new temp::TempList{value_temp, ptr_temp}));
     } else if (llvm::ConstantInt *const_int =
                    llvm::dyn_cast<llvm::ConstantInt>(value)) {
       value_temp = temp::TempFactory::NewTemp();
       instr_list->Append(new assem::OperInstr(
-          "movq $" + std::to_string(const_int->getSExtValue()) + ", (`d0)",
-          new temp::TempList(ptr_temp), nullptr, nullptr));
+          "movq $" + std::to_string(const_int->getSExtValue()) + ", (`s0)",
+          nullptr, new temp::TempList(ptr_temp), nullptr));
     }
 
     break;
@@ -575,6 +590,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
   }
   //   7. llvm::Instruction::Call
   case llvm::Instruction::Call: {
+    // FIXME: Caller saved 是所有dst
     llvm::CallInst *call_inst = llvm::dyn_cast<llvm::CallInst>(&inst);
     if (!call_inst) {
       throw std::runtime_error("Failed to cast to CallInst");
@@ -591,6 +607,8 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       Get return value from %rax
     */
 
+    // Source Registers are args.
+    auto source_regs = new temp::TempList();
     for (int i = 0, r = 0; i < args.size(); i++, r++) {
 
       if (i == 0 && IsRsp(args[i], function_name)) {
@@ -602,13 +620,13 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       llvm::Value *arg = args[i];
       temp::Temp *arg_temp = nullptr;
 
-      llvm::errs() << "Argument type: ";
-      arg->getType()->print(llvm::errs());
-      llvm::errs() << "\n";
+      // llvm::errs() << "Argument type: ";
+      // arg->getType()->print(llvm::errs());
+      // llvm::errs() << "\n";
 
-      llvm::errs() << "Argument value: ";
-      arg->print(llvm::errs());
-      llvm::errs() << "\n";
+      // llvm::errs() << "Argument value: ";
+      // arg->print(llvm::errs());
+      // llvm::errs() << "\n";
 
       auto it = temp_map_->find(arg);
       if (it != temp_map_->end()) {
@@ -622,39 +640,27 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
       // FIXME: 仅仅使用寄存器传参？
       // NOTE: 使用Round标记当前应使用的寄存器
       auto dst_temp = reg_manager->ArgRegs()->NthTemp(r);
+      source_regs->Append(dst_temp);
 
       if (arg_temp) {
         instr_list->Append(new assem::MoveInstr(
             "movq `s0, `d0", new temp::TempList({dst_temp}),
             new temp::TempList({arg_temp}))); // Move argument to register
-        // instr_list->Append(new assem::OperInstr(
-        //     "movq `s0, " + std::to_string(8 * i) + "(%rsp)",
-        //     new temp::TempList(arg_temp),
-        //     new temp::TempList({arg_temp, reg_manager->GetRegister(
-        //                                       frame::X64RegManager::Reg::RSP)}),
-        //     nullptr));
       } else if (llvm::ConstantInt *const_int =
                      llvm::dyn_cast<llvm::ConstantInt>(arg)) {
+        // FIXME: Move 立即数使用oper
         instr_list->Append(new assem::OperInstr(
             "movq $" + std::to_string(const_int->getSExtValue()) + ", `d0",
             new temp::TempList(dst_temp), nullptr, nullptr));
-        // instr_list->Append(new assem::OperInstr(
-        //     "movq $" + std::to_string(const_int->getSExtValue()) + ", " +
-        //         std::to_string(8 * i) + "(%rsp)",
-        //     new temp::TempList(),
-        //     new temp::TempList(
-        //         {reg_manager->GetRegister(frame::X64RegManager::Reg::RSP)}),
-        //     nullptr));
       } else {
         throw std::runtime_error("Unknown argument type");
       }
     }
 
-    instr_list->Append(
-        new assem::OperInstr("call " + callee->getName().str(),
-                             new temp::TempList(reg_manager->GetRegister(
-                                 frame::X64RegManager::Reg::RAX)),
-                             new temp::TempList(), nullptr));
+    // FIXME: 参数数量相关
+    instr_list->Append(new assem::OperInstr("call " + callee->getName().str(),
+                                            reg_manager->CallerSaves(),
+                                            source_regs, nullptr));
 
     temp::Temp *result_temp = temp_map_->at(&inst);
     instr_list->Append(
@@ -839,7 +845,7 @@ void CodeGen::InstrSel(assem::InstrList *instr_list, llvm::Instruction &inst,
           "cmpq $" + std::to_string(const_int->getSExtValue()) + ", `s0",
           nullptr, new temp::TempList({lhs_temp}), nullptr));
     }
-
+    // FIXME: 高位置零
     instr_list->Append(new assem::OperInstr(
         assem + " `d0", new temp::TempList({result_temp}),
         new temp::TempList({lhs_temp, rhs_temp}), nullptr));

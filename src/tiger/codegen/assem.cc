@@ -35,7 +35,7 @@ namespace assem {
  * @param dst dst_ temp
  * @param src src temp
  * @param jumps jump labels_
- * @param m temp map
+ * @param m temp map: 临时变量到寄存器字符串的映射
  * @return formatted assembly string
  */
 static std::string Format(std::string_view assem, temp::TempList *dst,

@@ -34,6 +34,12 @@ void AssemGen::LoadllvmAndGen(bool need_ra) {
       in_frame_info = true;
       continue;
     }
+    // ; ===== Frame Information =====
+    // ; tigermain -16 32
+    // ; nop 0 24
+    // ; init -8 24
+    // ; bsearch -8 48
+    // ; try 0 40
     if (in_frame_info && line[0] == ';') {
       std::stringstream ss(line.substr(2));
       std::string func_name;
@@ -116,6 +122,7 @@ namespace frame {
 void ProcFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
   std::unique_ptr<canon::Traces> traces;
   std::unique_ptr<cg::AssemInstr> assem_instr;
+  // NOTE: New in Lab6
   std::unique_ptr<ra::Result> allocation;
 
   // When generating proc fragment, do not output string assembly
@@ -150,6 +157,7 @@ void ProcFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
 
   assem::InstrList *il = assem_instr.get()->GetInstrList();
 
+  // NOTE: New in Lab6
   if (need_ra) {
     // Lab 6: register allocation
     TigerLog("----====Register allocate====-----\n");

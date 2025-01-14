@@ -17,7 +17,24 @@ namespace ra {
 /* TODO: Put your lab6 code here */
 RegAllocator::RegAllocator(const std::string &proc_name,
                            std::unique_ptr<cg::AssemInstr> assem_instr)
-    : proc_name_(proc_name), assem_instr_(std::move(assem_instr)) {}
+    : proc_name_(proc_name), assem_instr_(std::move(assem_instr)) {
+  precolored_ = new live::INodeList();
+  initial_ = new live::INodeList();
+  simplify_worklist_ = new live::INodeList();
+  freeze_worklist_ = new live::INodeList();
+  spill_worklist_ = new live::INodeList();
+  spilled_nodes_ = new live::INodeList();
+  coalesced_nodes_ = new live::INodeList();
+  colored_nodes_ = new live::INodeList();
+  select_stack_ = new live::INodeList();
+  worklist_moves_ = new live::MoveList();
+  active_moves_ = new live::MoveList();
+  move_list_ = std::make_unique<tab::Table<live::INode, live::MoveList>>();
+  degree_ = std::make_unique<tab::Table<live::INode, int>>();
+  interference_graph_ = nullptr;
+  moves_ = nullptr;
+  result_ = nullptr;
+}
 
 void RegAllocator::RegAlloc() {
   // procedure Main()
@@ -53,6 +70,9 @@ void RegAllocator::RegAlloc() {
   interference_graph_ = live_graph.interf_graph;
   moves_ = live_graph.moves;
 
+  // 获取temp_node_map
+  temp_node_map_ = live_graph_factory.GetTempNodeMap();
+
   Build();
   MakeWorklist();
   while (!simplify_worklist_->GetList().empty() ||
@@ -71,23 +91,24 @@ void RegAllocator::RegAlloc() {
   }
   AssignColors();
 
-  if (!spilled_nodes->Empty()) {
+  if (!spilled_nodes_->GetList().empty()) {
     RewriteProgram();
     RegAlloc();
   } else {
-
     // Create a temp::Map coloring map
     auto coloring = temp::Map::Empty();
     for (auto node : colored_nodes_->GetList()) {
       // TODO: Coloring 是个什么东西？
-      coloring->Enter(node->NodeInfo(),
-                      reg_manager->GetRegister(color_.at(node)));
+      // 临时变量到寄存器字符串的映射，如temp1 到 "%eax" 字符串的映射
+
+      // 查询分配到的机器寄存器
+      auto machine_reg = reg_manager->GetRegister(color_.at(node));
+      auto name = reg_manager->temp_map_->Look(machine_reg);
+      coloring->Enter(node->NodeInfo(), name);
     }
     // Prepare the instruction list
-    result_ = std::make_unique<Result>(coloring_result.coloring,
-                                       Strip(coloring_result.coloring));
-    temp::Map *color =
-        temp::Map::LayerMap(reg_manager->temp_map_, coloring_result.coloring);
+    result_ =
+        std::make_unique<Result>(coloring, this->assem_instr_->GetInstrList());
   }
 
   // FIXME
@@ -140,6 +161,27 @@ void RegAllocator::Build() {
       initial_->Append(node);
     }
   }
+
+  // Initialize Machine reg node colors
+  for (auto reg : reg_manager->Registers()->GetList()) {
+    // 找到机器寄存器对应的Node;
+    // 获取机器寄存器的编号;
+    auto node = temp_node_map_->Look(reg);
+    color_[node] = reg->Int();
+  }
+}
+
+void RegAllocator::AddEdge(live::INodePtr u, live::INodePtr v) {
+  if (!u->Adj(v) && u != v) {
+    if (!precolored_->Contain(u)) {
+      interference_graph_->AddEdge(u, v);
+      ++(*degree_->Look(u));
+    }
+    if (!precolored_->Contain(v)) {
+      interference_graph_->AddEdge(v, u);
+      ++(*degree_->Look(v));
+    }
+  }
 }
 
 /**
@@ -166,12 +208,11 @@ void RegAllocator::MakeWorklist() {
 }
 
 live::INodeListPtr RegAllocator::Adjacent(live::INodePtr node) {
-  // TODO
-  return nullptr;
+  live::INodeListPtr adj_list = node->Succ();
+  return adj_list->Diff(select_stack_->Union(coalesced_nodes_));
 }
 
 live::MoveList *RegAllocator::NodeMoves(live::INodePtr node) {
-  // TODO
   return move_list_->Look(node)->Intersect(
       active_moves_->Union(worklist_moves_));
 }
@@ -311,6 +352,13 @@ void RegAllocator::Coalesce() {
   active_moves_->Union(u, v);
 }
 
+void RegAllocator::AddWorkList(live::INodePtr u) {
+  if (!precolored_->Contain(u) && !MoveRelated(u) && u->Degree() < K_) {
+    freeze_worklist_->DeleteNode(u);
+    simplify_worklist_->Union(u);
+  }
+}
+
 bool RegAllocator::Ok(live::INodePtr t, live::INodePtr u) {
   return t->Degree() < K_ || precolored_->Contain(t) || t->Adj(u);
 }
@@ -340,7 +388,7 @@ void RegAllocator::Combine(live::INodePtr u, live::INodePtr v) {
   }
   coalesced_nodes_->Union(v);
   alias_->Enter(v, u);
-  move_list_->Union(u, v);
+  move_list_->Set(u, move_list_->Look(u)->Union(move_list_->Look(v)));
   for (live::INodePtr t : Adjacent(v)->GetList()) {
     AddEdge(t, u);
     DecrementDegree(t);
@@ -400,7 +448,7 @@ void RegAllocator::SelectSpill() {
   FreezeMoves(m);
 }
 
-col::Result RegAllocator::AssignColors() {
+void RegAllocator::AssignColors() {
   while (!select_stack_->GetList().empty()) {
     // n = pop(select_stack)
     live::INodePtr n = select_stack_->GetList().front();
@@ -497,4 +545,5 @@ void RegAllocator::RewriteProgram() {
   coalesced_nodes_->Clear();
 }
 
+Result::~Result() {}
 } // namespace ra
